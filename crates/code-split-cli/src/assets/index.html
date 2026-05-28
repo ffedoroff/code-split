@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>code-split diff</title>
+<link rel="stylesheet" href="./index.css">
+<script src="./graphviz.umd.js"></script>
+<script src="./data.js"></script>
+</head>
+<body>
+
+<header>
+  <div class="header-row">
+    <span class="header-brand">CODE SPLIT</span>
+    <span class="header-title" id="title">— diff</span>
+    <div class="header-meta">
+      <div class="snap-group">
+        <span class="mc" id="meta-before-date"></span><span class="meta-info" id="meta-before-info">(<code id="meta-before-name"></code><span class="mc" id="meta-before-commit"></span>)</span>
+        <button class="hbtn" id="btn-upload-before" title="Load different snapshot">↑ change</button>
+      </div>
+      <span class="ma" id="meta-arrow">→</span>
+      <div class="snap-group">
+        <span class="mc" id="meta-after-date"></span><span class="meta-info" id="meta-after-info">(<code id="meta-after-name"></code><span class="mc" id="meta-after-commit"></span>)</span>
+        <button class="hbtn" id="btn-upload-after" title="Load different snapshot">↑ change</button>
+        <button class="hbtn hbtn-x" id="btn-remove-after" title="Remove after snapshot">✕</button>
+      </div>
+      <span class="custom-indicator" id="custom-indicator"></span>
+    </div>
+  </div>
+  <input type="file" id="input-before" accept=".json" style="display:none">
+  <input type="file" id="input-after"  accept=".json" style="display:none">
+</header>
+
+<nav>
+  <div class="report-switch">
+    <span class="report-switch-label">View:</span>
+    <a data-view="modules" href="#" class="selected">Modules</a> |
+    <span id="nav-files-item"><a data-view="files" href="#">Files</a> | </span><a data-view="functions" href="#">Functions</a>
+  </div>
+  <div class="nav-separator"></div>
+  <button data-review="nodes"  class="active">Nodes</button>
+  <button data-review="edges"  class="active">Edges</button>
+  <button data-review="cycles">Cycles</button>
+  <button data-preset="before">Before</button>
+  <button data-preset="after">After</button>
+  <button data-preset="diff">Diff</button>
+  <button data-preset="cycles">Cycles</button>
+  <button id="nav-prompt-btn">Prompt Generator <span class="nav-ai-letters">AI</span></button>
+</nav>
+
+<main>
+
+<!-- ── Modules view ──────────────────────────────────────────────────────── -->
+<section class="view active" data-view="modules">
+  <div class="control-panel">
+    <div class="chips">
+      <span class="chips-label">Nodes:</span>
+      <button class="chip active" data-chip="nodes-added"     data-status="added">+? added</button>
+      <button class="chip active" data-chip="nodes-removed"   data-status="removed">−? removed</button>
+      <button class="chip active" data-chip="nodes-affected"  data-status="affected">? affected</button>
+      <button class="chip active" data-chip="nodes-unchanged" data-status="unchanged">? unchanged</button>
+    </div>
+    <div class="chips">
+      <span class="chips-label">Edges:</span>
+      <button class="chip active" data-chip="edges-added"     data-status="added">+? added</button>
+      <button class="chip active" data-chip="edges-removed"   data-status="removed">−? removed</button>
+      <button class="chip active" data-chip="edges-affected"  data-status="affected">? affected</button>
+      <button class="chip active" data-chip="edges-unchanged" data-status="unchanged">? unchanged</button>
+    </div>
+    <div class="chips chips-cycles">
+      <span class="chips-label">Cycles:</span>
+      <button class="chip active" data-chip="cycle-before" data-cycle="before-only">? removed</button>
+      <button class="chip active" data-chip="cycle-after"  data-cycle="after-only">+? added</button>
+    </div>
+  </div>
+  <div class="frame-wrap">
+    <div class="svg-frame" id="frame-modules"></div>
+    <div class="loading-indicator" id="loading-modules">Loading…</div>
+    <div class="size-controls">
+      <button class="size-mode-btn active" data-size="default" title="Default node size">■</button>
+      <button class="size-mode-btn"        data-size="loc"     title="Size ∝ lines of code">LOC</button>
+      <button class="size-mode-btn"        data-size="hk"      title="Size ∝ Henry–Kafura">HK</button>
+    </div>
+    <div class="zoom-controls">
+      <button class="zoom-btn" data-zoom="fullscreen" title="Fullscreen">⛶</button>
+      <button class="zoom-btn" data-zoom="in">+</button>
+      <button class="zoom-btn" data-zoom="fit">fit</button>
+      <button class="zoom-btn" data-zoom="out">−</button>
+    </div>
+  </div>
+</section>
+
+<!-- ── Files view ────────────────────────────────────────────────────────── -->
+<section class="view" data-view="files">
+  <div class="control-panel">
+    <div class="chips">
+      <span class="chips-label">Nodes:</span>
+      <button class="chip active" data-chip="nodes-added"     data-status="added">+? added</button>
+      <button class="chip active" data-chip="nodes-removed"   data-status="removed">−? removed</button>
+      <button class="chip active" data-chip="nodes-affected"  data-status="affected">? affected</button>
+      <button class="chip active" data-chip="nodes-unchanged" data-status="unchanged">? unchanged</button>
+    </div>
+    <div class="chips">
+      <span class="chips-label">Edges:</span>
+      <button class="chip active" data-chip="edges-added"     data-status="added">+? added</button>
+      <button class="chip active" data-chip="edges-removed"   data-status="removed">−? removed</button>
+      <button class="chip active" data-chip="edges-affected"  data-status="affected">? affected</button>
+      <button class="chip active" data-chip="edges-unchanged" data-status="unchanged">? unchanged</button>
+    </div>
+    <div class="chips chips-cycles">
+      <span class="chips-label">Cycles:</span>
+      <button class="chip active" data-chip="cycle-before" data-cycle="before-only">? removed</button>
+      <button class="chip active" data-chip="cycle-after"  data-cycle="after-only">+? added</button>
+    </div>
+  </div>
+  <div class="frame-wrap">
+    <div class="svg-frame" id="frame-files"></div>
+    <div class="loading-indicator" id="loading-files">Loading…</div>
+    <div class="size-controls">
+      <button class="size-mode-btn active" data-size="default" title="Default node size">■</button>
+      <button class="size-mode-btn"        data-size="loc"     title="Size ∝ lines of code">LOC</button>
+      <button class="size-mode-btn"        data-size="hk"      title="Size ∝ Henry–Kafura">HK</button>
+    </div>
+    <div class="zoom-controls">
+      <button class="zoom-btn" data-zoom="fullscreen" title="Fullscreen">⛶</button>
+      <button class="zoom-btn" data-zoom="in">+</button>
+      <button class="zoom-btn" data-zoom="fit">fit</button>
+      <button class="zoom-btn" data-zoom="out">−</button>
+    </div>
+  </div>
+</section>
+
+<!-- ── Functions view ────────────────────────────────────────────────────── -->
+<section class="view" data-view="functions">
+  <div class="control-panel">
+    <div class="chips">
+      <span class="chips-label">Nodes:</span>
+      <button class="chip active" data-chip="nodes-added"     data-status="added">+? added</button>
+      <button class="chip active" data-chip="nodes-removed"   data-status="removed">−? removed</button>
+      <button class="chip active" data-chip="nodes-affected"  data-status="affected">? affected</button>
+      <button class="chip active" data-chip="nodes-unchanged" data-status="unchanged">? unchanged</button>
+    </div>
+    <div class="chips">
+      <span class="chips-label">Edges:</span>
+      <button class="chip active" data-chip="edges-added"     data-status="added">+? added</button>
+      <button class="chip active" data-chip="edges-removed"   data-status="removed">−? removed</button>
+      <button class="chip active" data-chip="edges-affected"  data-status="affected">? affected</button>
+      <button class="chip active" data-chip="edges-unchanged" data-status="unchanged">? unchanged</button>
+    </div>
+    <div class="chips chips-cycles">
+      <span class="chips-label">Cycles:</span>
+      <button class="chip active" data-chip="cycle-before" data-cycle="before-only">? removed</button>
+      <button class="chip active" data-chip="cycle-after"  data-cycle="after-only">+? added</button>
+    </div>
+  </div>
+  <div class="frame-wrap">
+    <div class="svg-frame" id="frame-functions"></div>
+    <div class="loading-indicator" id="loading-functions">Loading…</div>
+    <div class="size-controls">
+      <button class="size-mode-btn active" data-size="default" title="Default node size">■</button>
+      <button class="size-mode-btn"        data-size="loc"     title="Size ∝ lines of code">LOC</button>
+      <button class="size-mode-btn"        data-size="hk"      title="Size ∝ Henry–Kafura">HK</button>
+    </div>
+    <div class="zoom-controls">
+      <button class="zoom-btn" data-zoom="fullscreen" title="Fullscreen">⛶</button>
+      <button class="zoom-btn" data-zoom="in">+</button>
+      <button class="zoom-btn" data-zoom="fit">fit</button>
+      <button class="zoom-btn" data-zoom="out">−</button>
+    </div>
+  </div>
+</section>
+
+<!-- ── Summary ───────────────────────────────────────────────────────────── -->
+<section class="summary">
+  <div class="node-table-header" id="summary-header">
+    <span id="summary-title">Diff summary</span>
+  </div>
+  <div class="node-table-body">
+    <div class="node-table-container" id="summary-container">
+      <table class="node-table summary-table">
+        <thead id="summary-thead"></thead>
+        <tbody id="summary-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<div id="tt" class="tt" hidden></div>
+
+<script src="./diff.js"></script>
+<script src="./layout.js"></script>
+<script src="./utils.js"></script>
+<script src="./modal.js"></script>
+<script src="./panzoom.js"></script>
+<script src="./diagram.js"></script>
+<script src="./ui.js"></script>
+<script src="./summary.js"></script>
+<script src="./export-popup.js"></script>
+<script src="./node-table.js"></script>
+<script src="./nav.js"></script>
+<script src="./app.js"></script>
+</body>
+</html>

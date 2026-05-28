@@ -1,0 +1,56 @@
+# code-split.toml — project-level configuration for code-split
+#
+# plugin = "rust"   # default plugin; overridden by --plugin
+#
+# Searched automatically (highest priority first):
+#   1. CLI flags (--ignore, --cycle-rule, --threshold)
+#   2. --config <file>
+#   3. code-split.toml  (cwd, then workspace root)
+#   4. Cargo.toml    [workspace.metadata.code-split] or [package.metadata.code-split]
+#   5. Built-in defaults
+
+# ── Ignore ─────────────────────────────────────────────────────────────────────
+# Nodes whose path matches any glob are removed before analysis.
+# Patterns are relative to the workspace root. Supports ** globs.
+[ignore]
+# Strip all inline `mod tests { … }` submodules (IDs ending with `::tests`).
+test_modules = true
+
+paths = [
+  # "**/tests/**",
+  # "**/generated/**",
+  # "crates/*/benches/**",
+
+  # External test-only crates (dev-dependencies from registry).
+  # "axum-test-*/**",
+  # "proptest-*/**",
+  # "rstest-*/**",
+  # "rstest_macros-*/**",
+  # "wiremock-*/**",
+]
+
+# ── Cycle rules ────────────────────────────────────────────────────────────────
+# allow  — strip from snapshot entirely (not shown in reports)
+# warn   — show in report, exit 0
+# deny   — show in report, exit 1 with --check
+[rules.cycles]
+test-embed = "allow"   # parent → mod tests → parent (language feature, not a smell)
+mutual     = "deny"    # two nodes that directly depend on each other
+chain      = "deny"    # three or more nodes in a dependency cycle
+
+# ── Threshold rules ────────────────────────────────────────────────────────────
+# [rules.thresholds.node]  — flag any single node whose metric exceeds the limit
+# [rules.thresholds.avg]   — flag when the graph-wide average exceeds the limit
+#
+# Available metrics: hk, cyclomatic, cognitive, fan_in, fan_out, loc
+# Violations are reported with --check; severity is always deny.
+
+# [rules.thresholds.node]
+# hk         = 500_000
+# cyclomatic  = 25
+# cognitive   = 30
+# fan_out     = 50
+
+# [rules.thresholds.avg]
+# hk         = 50_000
+# cyclomatic  = 10

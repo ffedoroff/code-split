@@ -1,0 +1,17 @@
+[package]
+name = "code-split-complexity"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Complexity metrics stage for Code Split: cyclomatic, cognitive, Halstead via rust-code-analysis."
+
+[dependencies]
+code-split-core = { workspace = true }
+rust-code-analysis = { workspace = true }
+anyhow = { workspace = true }
+walkdir = "2"
+
+[dev-dependencies]
+syn = { workspace = true }

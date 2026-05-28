@@ -1,0 +1,5 @@
+.claude/
+.code-split
+/target/
+crates/code-split-cli/src/assets/data.js
+.DS_Store
