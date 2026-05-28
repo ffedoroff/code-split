@@ -13,3 +13,4 @@ installers = ["shell", "powershell"]
 targets = ["aarch64-unknown-linux-gnu"]
 # Where to host releases
 hosting = "github"
+github-build-setup = "build-setup.yml"
