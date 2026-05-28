@@ -205,7 +205,7 @@ Markdown text report. No network access or LLM is required.
 | Step | Scope |
 |------|-------|
 | Step 1 | Additional language plugins: Python, JavaScript, Go, C#, PHP; framework-specific plugins (Django, WordPress, etc.) with domain-specific node kinds |
-| Step 2 | AI prompt generation for principles review using the `docs/principles/` corpus |
+| Step 2 | AI prompt generation for principles review using the `principles/` corpus (per-language: `principles/rust/`, `principles/python/`, `principles/typescript/`) |
 
 ### 4.2 Out of Scope (All Versions)
 
@@ -712,8 +712,8 @@ tool to a specific LLM provider.
 
 The HTML report SHOULD support a principles-audit prompt mode that maps
 the top coupling findings to the canonical principle corpus under
-`docs/principles/` and instructs the LLM to audit the codebase against
-each principle.
+`principles/<language>/` (currently `rust/`, `python/`, `typescript/`)
+and instructs the LLM to audit the codebase against each principle.
 
 **Actors**: `cpt-code-split-actor-developer`, `cpt-code-split-actor-tech-lead`
 

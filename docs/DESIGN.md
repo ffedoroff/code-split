@@ -1263,7 +1263,10 @@ code-split/
   docs/
     PRD.md
     DESIGN.md
-    principles/            # Principle corpus (used at P3 for prompt generation)
+  principles/              # Principle corpus (used at P3 for prompt generation)
+    rust/                  # Rust-specific principle docs
+    python/                # Python-specific principle docs
+    typescript/            # TypeScript/JavaScript principle docs
 ```
 
 **Out of scope for this revision (deferred to P2/P3)**:
