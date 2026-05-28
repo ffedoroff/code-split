@@ -3,7 +3,7 @@ members = ["crates/*"]
 resolver = "3"
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 edition = "2024"
 rust-version = "1.95"
 license = "Apache-2.0"
@@ -44,3 +44,8 @@ ra_ap_load-cargo     = { package = "ra_ap_load-cargo", version = "=0.0.333" }
 ra_ap_project_model  = "=0.0.333"
 ra_ap_syntax         = "=0.0.333"
 ra_ap_vfs            = "=0.0.333"
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
