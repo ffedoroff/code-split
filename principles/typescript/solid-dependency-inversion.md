@@ -52,7 +52,7 @@ This is the principle behind:
 
 All three are the same idea: *the domain owns the interfaces, the
 infrastructure owns the implementations*. See
-[Hexagonal Architecture](hexagonal-architecture.md) for the
+Hexagonal Architecture (Cockburn) for the
 architecture-scale instantiation.
 
 ## Why it matters
@@ -438,7 +438,7 @@ declaration-merging and runtime presence, not about layering.
 - [Composition Over Inheritance](composition-over-inheritance.md)
   — DIP is the macro form of "compose with interfaces, don't extend
   concretes".
-- [Hexagonal Architecture](hexagonal-architecture.md) — the
+- Hexagonal Architecture (Cockburn) — the
   architecture-scale instantiation of DIP; ports = domain
   interfaces, adapters = infra implementations.
 

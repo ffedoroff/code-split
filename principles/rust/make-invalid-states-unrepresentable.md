@@ -26,6 +26,7 @@ Two designs of the same feature can differ dramatically in how many
 runtime checks they require:
 
 **Design A** (invalid states representable):
+
 ```rust
 struct User {
     email: Option<String>,        // may be None
@@ -44,6 +45,7 @@ fn send_birthday_email(u: &User) {
 ```
 
 **Design B** (invalid states *unrepresentable*):
+
 ```rust
 struct User {
     email: Email,            // always present, parsed at construction

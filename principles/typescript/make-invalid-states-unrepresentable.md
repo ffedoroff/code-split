@@ -418,7 +418,7 @@ class Connection {
 
 Every method needs the `isOpen` check; the compiler cannot help.
 
-### Idiomatic fix: typestate (see §5 above).
+### Idiomatic fix: typestate (see §5 above)
 
 ### Anti-pattern: parallel arrays that must stay in sync
 

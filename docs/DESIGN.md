@@ -954,6 +954,7 @@ with `--no-deps`, so external packages are not enumerated and
 `metadata.resolve` is `None`. Step 4 (`code-split-sema`) is skipped.
 
 `functions.json` is written as a valid but empty graph:
+
 ```json
 { "meta": { "level": "fn", ... }, "nodes": [], "edges": [] }
 ```
@@ -1104,6 +1105,7 @@ code-split analyze . --plugin python -- --root-package src/myapp
 **Django (P3 — framework plugin)**
 
 `code-split.toml` в корне проекта:
+
 ```toml
 [plugins.django]
 command = "code-split-plugin-django"
@@ -1142,6 +1144,7 @@ code-split analyze . --plugin js \
 **Кастомный / корпоративный плагин**
 
 `code-split.toml`:
+
 ```toml
 [plugins.corp]
 command = "/opt/corp-tools/code-split-plugin-corp"

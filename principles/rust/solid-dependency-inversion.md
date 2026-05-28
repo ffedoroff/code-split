@@ -334,7 +334,7 @@ else has the abstractions.
 - [Composition Over Inheritance](composition-over-inheritance.md)
   — DIP is the macro form of "compose with traits, don't inherit
   from concretes".
-- [Hexagonal Architecture](hexagonal-architecture.md) — the
+- Hexagonal Architecture (Cockburn) — the
   architecture-scale instantiation of DIP.
 
 ## References

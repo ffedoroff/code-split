@@ -331,7 +331,7 @@ class CacheTtl(Protocol):
 ```
 
 The test fake implements only what the test needs (e.g. `CacheGet`
-+ `CachePut`). The type checker enforces it.
+- `CachePut`). The type checker enforces it.
 
 ## ISP at the package level
 

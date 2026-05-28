@@ -74,6 +74,7 @@ hk = 500_000
 All config values can be set or overridden from the command line.
 
 ### `--plugin <NAME>`
+
 Override the default plugin (`rust`, `python`, or a path to a binary).  
 Falls back to `plugin` in config file, then `"rust"`.
 
@@ -83,6 +84,7 @@ code-split analyze . --plugin python   # always uses python
 ```
 
 ### `--config <FILE>`
+
 Load config from an explicit path instead of auto-discovery.
 
 ```bash
@@ -90,6 +92,7 @@ code-split analyze . --config ci/strict.toml
 ```
 
 ### `--ignore <GLOB>`
+
 Add a path glob to the ignore list. Repeatable.
 
 ```bash
@@ -97,6 +100,7 @@ code-split analyze . --ignore '**/tests/**' --ignore '**/generated/**'
 ```
 
 ### `--cycle-rule <KIND=SEVERITY>`
+
 Override a cycle rule. `KIND`: `test-embed` | `mutual` | `chain`.  
 `SEVERITY`: `allow` | `warn` | `deny`. Repeatable.
 
@@ -106,6 +110,7 @@ code-split analyze . --cycle-rule test-embed=allow --cycle-rule mutual=warn
 ```
 
 ### `--threshold <SCOPE.METRIC=N>`
+
 Set a threshold. `SCOPE`: `node` | `avg`. `METRIC`: `hk` | `cyclomatic` |
 `cognitive` | `fan_in` | `fan_out` | `loc`. Repeatable.
 
@@ -114,6 +119,7 @@ code-split analyze . --threshold node.hk=500000 --threshold avg.cyclomatic=10
 ```
 
 ### `--exit-zero`
+
 Exit 0 even when `deny` violations are found. Useful in CI when you want to
 collect the snapshot as an artifact without blocking the pipeline.
 

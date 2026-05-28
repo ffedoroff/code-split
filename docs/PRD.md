@@ -744,7 +744,7 @@ Fan-out, H.vol, H.bugs, H.effort, H.time, H.len, H.vocab, Cyclomatic,
 Cognitive, MI, MI SEI, Logical, Comments, Blank. A checkbox column
 (leftmost) enables persistent multi-node selection: clicking a checkbox
 highlights the row (yellow) and the corresponding SVG node (yellow fill
-+ amber stroke); shift-click selects a range; the header checkbox
+- amber stroke); shift-click selects a range; the header checkbox
 selects or deselects all visible rows (indeterminate when partial).
 The modal popup opened by clicking a row or an SVG node is fullscreen
 (locks body scroll); it includes a synced selection checkbox, fields in
@@ -1057,6 +1057,7 @@ truncation; whole numbers are serialized without a decimal point.
 ```json
 { "from": "<node-id>", "to": "<node-id>", "kind": "contains | uses | calls", "unresolved": false }
 ```
+
 ```
 
 **Breaking Change Policy**: Additive fields are minor; renames or

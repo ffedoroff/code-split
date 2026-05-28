@@ -31,6 +31,7 @@ Two designs of the same feature can differ dramatically in how many
 runtime checks they require:
 
 **Design A** (invalid states representable):
+
 ```python
 from dataclasses import dataclass
 
@@ -51,6 +52,7 @@ def send_birthday_email(u: User) -> None:
 ```
 
 **Design B** (invalid states *unrepresentable*):
+
 ```python
 from dataclasses import dataclass
 from enum import Enum
