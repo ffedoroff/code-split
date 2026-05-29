@@ -37,18 +37,20 @@ pub struct RulesConfig {
 #[derive(Debug, Deserialize)]
 #[serde(default)]
 pub struct CycleRules {
+    /// Each cycle kind is either enabled (a cycle of that kind is a violation and
+    /// fails `check`) or disabled (stripped from the snapshot, not reported).
     #[serde(rename = "test-embed")]
-    pub test_embed: Severity,
-    pub mutual: Severity,
-    pub chain: Severity,
+    pub test_embed: bool,
+    pub mutual: bool,
+    pub chain: bool,
 }
 
 impl Default for CycleRules {
     fn default() -> Self {
         Self {
-            test_embed: Severity::Allow,
-            mutual: Severity::Deny,
-            chain: Severity::Deny,
+            test_embed: false,
+            mutual: true,
+            chain: true,
         }
     }
 }
@@ -71,27 +73,6 @@ pub struct MetricThresholds {
     pub fan_in: Option<f64>,
     pub fan_out: Option<f64>,
     pub loc: Option<f64>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Default)]
-#[serde(rename_all = "lowercase")]
-pub enum Severity {
-    Allow,
-    Warn,
-    #[default]
-    Deny,
-}
-
-impl std::str::FromStr for Severity {
-    type Err = anyhow::Error;
-    fn from_str(s: &str) -> Result<Self> {
-        match s {
-            "allow" => Ok(Self::Allow),
-            "warn" => Ok(Self::Warn),
-            "deny" => Ok(Self::Deny),
-            other => anyhow::bail!("unknown severity {:?}; expected allow|warn|deny", other),
-        }
-    }
 }
 
 // ── Loading ────────────────────────────────────────────────────────────────────
@@ -203,13 +184,13 @@ fn apply_cli_overrides(
     cfg.ignore.paths.extend_from_slice(ignore_paths);
 
     for raw in cycle_rules {
-        // Format: "kind=severity", e.g. "test-embed=allow"
-        let (kind_str, sev_str) = split_kv(raw, "cycle-rule")?;
-        let sev: Severity = sev_str.parse()?;
+        // Format: "kind=on|off", e.g. "test-embed=on"
+        let (kind_str, state_str) = split_kv(raw, "cycle-rule")?;
+        let enabled = parse_on_off(state_str)?;
         match kind_str {
-            "test-embed" => cfg.rules.cycles.test_embed = sev,
-            "mutual" => cfg.rules.cycles.mutual = sev,
-            "chain" => cfg.rules.cycles.chain = sev,
+            "test-embed" => cfg.rules.cycles.test_embed = enabled,
+            "mutual" => cfg.rules.cycles.mutual = enabled,
+            "chain" => cfg.rules.cycles.chain = enabled,
             other => anyhow::bail!(
                 "unknown cycle kind {:?}; expected test-embed|mutual|chain",
                 other
@@ -251,6 +232,14 @@ fn apply_cli_overrides(
 fn split_kv<'a>(s: &'a str, flag: &str) -> Result<(&'a str, &'a str)> {
     s.split_once('=')
         .with_context(|| format!("--{flag} must be key=value, got: {s}"))
+}
+
+fn parse_on_off(s: &str) -> Result<bool> {
+    match s {
+        "on" | "true" => Ok(true),
+        "off" | "false" => Ok(false),
+        other => anyhow::bail!("expected on|off, got {:?}", other),
+    }
 }
 
 // ── Path filtering ─────────────────────────────────────────────────────────────
@@ -445,45 +434,38 @@ pub fn apply_cycle_rules(graphs: &mut PluginGraphs, rules: &CycleRules) {
 }
 
 fn apply_cycle_rules_graph(graph: &mut Graph, rules: &CycleRules) {
-    let allowed: HashSet<CycleKind> = [
-        (&CycleKind::TestEmbed, &rules.test_embed),
-        (&CycleKind::Mutual, &rules.mutual),
-        (&CycleKind::Chain, &rules.chain),
+    let disabled: HashSet<CycleKind> = [
+        (CycleKind::TestEmbed, rules.test_embed),
+        (CycleKind::Mutual, rules.mutual),
+        (CycleKind::Chain, rules.chain),
     ]
-    .iter()
-    .filter(|(_, s)| **s == Severity::Allow)
-    .map(|(k, _)| (*k).clone())
+    .into_iter()
+    .filter(|(_, enabled)| !*enabled)
+    .map(|(k, _)| k)
     .collect();
 
-    if allowed.is_empty() {
+    if disabled.is_empty() {
         return;
     }
     for node in &mut graph.nodes {
         if node
             .cycle_kind
             .as_ref()
-            .map(|k| allowed.contains(k))
+            .map(|k| disabled.contains(k))
             .unwrap_or(false)
         {
             node.cycle_kind = None;
         }
     }
-    graph.cycles.retain(|cg| !allowed.contains(&cg.kind));
+    graph.cycles.retain(|cg| !disabled.contains(&cg.kind));
 }
 
 // ── Threshold violations ───────────────────────────────────────────────────────
 
 #[derive(Debug)]
 pub struct Violation {
-    pub severity: Severity,
     pub graph: &'static str,
     pub message: String,
-}
-
-impl Violation {
-    pub fn is_error(&self) -> bool {
-        self.severity == Severity::Deny
-    }
 }
 
 pub fn check_violations(graphs: &PluginGraphs, rules: &RulesConfig) -> Vec<Violation> {
@@ -500,6 +482,16 @@ fn check_graph_violations(
     rules: &RulesConfig,
     vs: &mut Vec<Violation>,
 ) {
+    // Cycles: every remaining cycle group is of an enabled kind (disabled kinds
+    // were already stripped by apply_cycle_rules), so each is a violation.
+    for cg in &graph.cycles {
+        push(
+            vs,
+            name,
+            format!("{:?} cycle: {} nodes", cg.kind, cg.nodes.len()),
+        );
+    }
+
     let nt = &rules.thresholds.node;
 
     for node in &graph.nodes {
@@ -612,9 +604,5 @@ fn check_graph_violations(
 }
 
 fn push(vs: &mut Vec<Violation>, graph: &'static str, message: String) {
-    vs.push(Violation {
-        severity: Severity::Deny,
-        graph,
-        message,
-    });
+    vs.push(Violation { graph, message });
 }

@@ -211,8 +211,9 @@ fn run_analyze(
         logger::info(&format!("config: {f}"));
     }
 
-    // Priority: --plugin CLI > config.plugin > "rust"
-    let plugin_name: &str = plugin_arg.or(cfg.plugin.as_deref()).unwrap_or("rust");
+    // Priority: --plugin CLI > config.plugin > auto-detect by project markers.
+    let plugin_owned = resolve_plugin(plugin_arg, cfg.plugin.as_deref(), &target)?;
+    let plugin_name: &str = &plugin_owned;
 
     let want_modules = requested.contains(&GraphKind::Modules);
     let want_files = requested.contains(&GraphKind::Files);
@@ -236,7 +237,7 @@ fn run_analyze(
     let command = build_command_string(plugin_name, &target, local_only, requested, extra);
 
     let (mut plugin_graphs, mut timings) =
-        plugin::run(plugin_name, &target, local_only, want_functions, extra)
+        plugin::run(plugin_name, &target, local_only, want_functions)
             .with_context(|| format!("plugin '{}' failed", plugin_name))?;
 
     if !want_modules {
@@ -268,16 +269,10 @@ fn run_analyze(
 
     let violations = config::check_violations(&plugin_graphs, &cfg.rules);
     for v in &violations {
-        logger::info(&format!(
-            "violation [{}] {}: {}",
-            v.graph,
-            if v.is_error() { "error" } else { "warn" },
-            v.message
-        ));
+        logger::info(&format!("violation [{}]: {}", v.graph, v.message));
     }
-    let errors = violations.iter().filter(|v| v.is_error()).count();
-    if errors > 0 && !exit_zero {
-        anyhow::bail!("{errors} deny violation(s) found — see above");
+    if !violations.is_empty() && !exit_zero {
+        anyhow::bail!("{} violation(s) found — see above", violations.len());
     }
 
     let git = git::collect(&target);
@@ -289,7 +284,10 @@ fn run_analyze(
     }
 
     let mut versions = HashMap::new();
-    versions.insert("code-split".to_string(), env!("CARGO_PKG_VERSION").to_string());
+    versions.insert(
+        "code-split".to_string(),
+        env!("CARGO_PKG_VERSION").to_string(),
+    );
     if plugin_name == "rust" {
         versions.insert(
             "code_split_plugin_rust".to_string(),
@@ -340,6 +338,51 @@ fn run_analyze(
     }
 
     Ok(())
+}
+
+/// Resolve the plugin name: explicit `--plugin` > config `plugin` > auto-detect.
+/// A value of `auto` (or absence) triggers project-marker detection.
+fn resolve_plugin(arg: Option<&str>, cfg: Option<&str>, workspace: &Path) -> Result<String> {
+    if let Some(p) = arg
+        && p != "auto"
+    {
+        return Ok(p.to_string());
+    }
+    if let Some(p) = cfg
+        && p != "auto"
+    {
+        return Ok(p.to_string());
+    }
+    detect_plugin(workspace)
+}
+
+/// Detect the plugin from project markers in the workspace root.
+fn detect_plugin(workspace: &Path) -> Result<String> {
+    let mut found: Vec<&str> = Vec::new();
+    if workspace.join("Cargo.toml").exists() {
+        found.push("rust");
+    }
+    if workspace.join("pyproject.toml").exists()
+        || workspace.join("setup.py").exists()
+        || workspace.join("setup.cfg").exists()
+    {
+        found.push("python");
+    }
+    if workspace.join("package.json").exists() || workspace.join("tsconfig.json").exists() {
+        found.push("javascript");
+    }
+    match found.as_slice() {
+        [one] => Ok((*one).to_string()),
+        [] => anyhow::bail!(
+            "could not auto-detect a plugin in {}: no project marker found — \
+             pass --plugin rust|python|javascript",
+            workspace.display()
+        ),
+        many => anyhow::bail!(
+            "multiple project markers found ({}) — pass --plugin to choose",
+            many.join(", ")
+        ),
+    }
 }
 
 fn detect_roots() -> HashMap<String, String> {
