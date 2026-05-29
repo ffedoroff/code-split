@@ -4,6 +4,10 @@ Structural-analysis tool for **Rust, Python, JavaScript and TypeScript** codebas
 
 **Status:** pre-alpha. APIs and output shapes may change without notice. Pin a specific version.
 
+## Offline & private
+
+code-split always runs **entirely on your machine**. It makes **no network calls**, sends **no telemetry or analytics**, and **never uploads your code or analysis results** anywhere. Generated HTML reports are self-contained — no CDN, no external requests, no tracking.
+
 ## What it finds
 
 - **Components that grew too complex and should be split.** Per-function and per-module cyclomatic / cognitive / Halstead / MI metrics; flags entities above your threshold.
@@ -18,18 +22,17 @@ The tool **does not refactor for you**. It produces a structured, machine-readab
 Runs as a linter. Configure thresholds in `code-split.toml`; the CLI exits non-zero when the codebase breaches them — so a PR that introduces a new cycle, a function above your cognitive budget, or a file above your LOC limit fails the build.
 
 ```sh
-code-split analyze . --plugin rust \
-  --cycle-rule mutual=deny --cycle-rule chain=deny \
+code-split check . \
   --threshold node.cognitive=25 --threshold node.loc=800
 ```
 
-The linter behaviour is built into `analyze` — exits non-zero on `deny`-severity cycles or threshold breaches. See [docs/CLI.md](docs/CLI.md) for all flags.
+The linter is the `check` command — exits non-zero on any cycle or threshold violation (`mutual` and `chain` cycle checks are on by default). See [docs/CLI.md](docs/CLI.md) for all flags.
 
 ## Full CLI
 
 Written in Rust — fast, memory-safe, single static-ish binary with **no runtime dependencies** (no Python, no Node, no JVM, no shared libs to install). One file on PATH, done.
 
-Four commands: `analyze` (snapshot JSON + linter), `report` (offline HTML), `diff` (HTML diff between snapshots), `compare` (JSON or HTML diff for CI artifacts). No daemon, no language server, no plugin host required at runtime. Full reference: [docs/CLI.md](docs/CLI.md).
+Three commands: `check` (linter — exits non-zero on violations), `report` (snapshot JSON + offline HTML, with optional in-run before/after diff via `--before`), `diff` (HTML or JSON diff between two snapshots, for CI artifacts). No daemon, no language server, no plugin host required at runtime. Full reference: [docs/CLI.md](docs/CLI.md).
 
 ## HTML report with dynamic diagrams
 
@@ -74,18 +77,18 @@ All channels ship the same `code-split` binary built from the same Rust source. 
 ## Quick start
 
 ```sh
-# extract dependency graphs from a workspace
-code-split analyze --plugin rust ./path/to/project
-# → modules.json / files.json / functions.json
+# lint a project — non-zero exit on violations (CI linter)
+code-split check ./path/to/project
 
-# generate an offline interactive HTML report
-code-split report ./snapshots/latest
+# analyze and write a snapshot JSON + offline HTML report
+code-split report ./path/to/project
+# → .code-split/{project-dir}-{ts}.json + .code-split/index.html
 
-# before / after refactor comparison
-code-split diff ./snapshots/before ./snapshots/after
+# before / after refactor comparison of two snapshots
+code-split diff --before .code-split/before.json --after .code-split/after.json
 ```
 
-Built-in plugins: `rust` (cargo + syn + rust-analyzer), `python`, `javascript` (also handles TypeScript). Third-party plugins resolved as `code-split-plugin-<name>` on PATH.
+Built-in plugins: `rust` (cargo + syn + rust-analyzer), `python`, `javascript` (also handles TypeScript) — all compiled into the single binary, nothing to install.
 
 ## Documentation
 

@@ -16,7 +16,7 @@ fmt:
 
 lint-md:
 	lychee --offline --no-progress 'docs/**/*.md' 'principles/**/*.md' 'AGENTS.md' 'CLAUDE.md'
-	markdownlint-cli2
+	npx --yes markdownlint-cli2
 
 lint: clippy lint-md
 

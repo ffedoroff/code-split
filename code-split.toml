@@ -30,20 +30,18 @@ paths = [
 ]
 
 # ── Cycle rules ────────────────────────────────────────────────────────────────
-# allow  — strip from snapshot entirely (not shown in reports)
-# warn   — show in report, exit 0
-# deny   — show in report, exit 1 with --check
+# Each cycle kind is either on (a cycle of that kind fails `check`) or off (ignored).
 [rules.cycles]
-test-embed = "allow"   # parent → mod tests → parent (language feature, not a smell)
-mutual     = "deny"    # two nodes that directly depend on each other
-chain      = "deny"    # three or more nodes in a dependency cycle
+test-embed = false   # off — parent → mod tests → parent (language feature, not a smell)
+mutual     = true    # on  — two nodes that directly depend on each other
+chain      = true    # on  — three or more nodes in a dependency cycle
 
 # ── Threshold rules ────────────────────────────────────────────────────────────
 # [rules.thresholds.node]  — flag any single node whose metric exceeds the limit
 # [rules.thresholds.avg]   — flag when the graph-wide average exceeds the limit
 #
 # Available metrics: hk, cyclomatic, cognitive, fan_in, fan_out, loc
-# Violations are reported with --check; severity is always deny.
+# A set threshold fails `check` when exceeded; unset = not checked.
 
 # [rules.thresholds.node]
 # hk         = 500_000
