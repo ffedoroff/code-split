@@ -10,7 +10,7 @@
 #
 # Build:
 #   docker buildx build --platform linux/amd64,linux/arm64 \
-#     --build-arg VERSION=0.1.0-alpha.8 -t ffedoroff/code-split .
+#     --build-arg VERSION=0.1.0-alpha.8 -t fedoroff/code-split .
 
 FROM debian:bookworm-slim AS downloader
 

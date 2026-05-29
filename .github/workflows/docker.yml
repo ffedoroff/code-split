@@ -62,7 +62,7 @@ jobs:
           fi
           owner_lc="${GITHUB_REPOSITORY_OWNER,,}"
 
-          hub="ffedoroff/code-split"
+          hub="fedoroff/code-split"
           ghcr="ghcr.io/${owner_lc}/code-split"
 
           tags="${hub}:${v},${ghcr}:${v}"
