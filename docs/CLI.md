@@ -59,7 +59,7 @@ code-split check [path] [options]
 
 | Flag | Meaning |
 |---|---|
-| `--threshold <SCOPE.METRIC=N>` | Hard limit on a metric — a breach fails the check. SCOPE: `node` (per item) or `avg` (workspace average). METRIC: `cyclomatic`, `cognitive`, `hk`, `fan_in`, `fan_out`, `loc`. Repeatable. |
+| `--threshold <SCOPE[.avg].METRIC=N>` | Hard limit on a metric — a breach fails the check. SCOPE: `file` / `module` / `function` (a single unit on that graph). Add `.avg` for that scope's graph-wide average (e.g. `function.avg.cognitive`). METRIC: `cyclomatic`, `cognitive`, `hk`, `fan_in`, `fan_out`, `loc`. Repeatable. See [ERRORS.md](ERRORS.md#threshold-scopes). |
 | `--cycle-rule <KIND=on\|off>` | Enable or disable a cycle check. KIND: `test-embed`, `mutual`, `chain`. Defaults: `test-embed` off, `mutual` and `chain` on. |
 | `--output-format <fmt>` | Diagnostics format: `human` (default), `json`, `github`, `sarif`. Use `github` for PR annotations, `sarif`/`json` for tooling. |
 | `--top <N>` | Report only the `N` worst violations (ranked worst-first) and suppress the rest. A reporting limit only — it does **not** change the exit code. Default: all. |
@@ -79,9 +79,9 @@ single worst thing to fix (handy for handing one focused fix to a human or an AI
 # lint the current project, fail the build on any violation
 code-split check
 
-# Python project, cap per-function cognitive complexity and file size
+# Python project: a single function and a single file get different budgets
 code-split check ./api --plugin python \
-  --threshold node.cognitive=25 --threshold node.loc=800
+  --threshold function.cognitive=25 --threshold file.loc=800
 
 # CI gate with machine-readable annotations; also flag test-embed cycles
 code-split check --cycle-rule test-embed=on --output-format github
@@ -89,6 +89,33 @@ code-split check --cycle-rule test-embed=on --output-format github
 # useful for AI agents: surface only the single worst violation to fix
 code-split check --top 1
 ```
+
+### Diagnostics output
+
+Every finding is identified by its dotted **rule id** — the same string used as
+the config key and CLI flag — and tagged with a concern **group**: `CYC`
+(dependency cycles), `CPX` (complexity), `CPL` (coupling), `SIZ` (size). Threshold
+rules are `threshold.<scope>[.avg].<metric>` — scope `file` / `module` /
+`function` for a single unit, plus an optional `.avg` for that scope's graph-wide
+average. The full reference — what each rule flags, why it matters, and how to fix
+it — lives in [ERRORS.md](ERRORS.md).
+
+In the default `human` format each violation is a self-contained block, detailed
+enough to paste straight into an AI assistant as a complete prompt:
+
+```text
+threshold.function.cognitive  ·  CPX  ·  functions graph
+  where  fn:app::handlers::process — src/handlers.rs:142
+  issue  cognitive complexity 67 exceeds limit 25 (2.7× over budget)
+  why    Cognitive complexity weights nested and interrupted control flow by how hard a human finds it to follow…
+  fix    Extract nested blocks into named helpers, use early returns to cut nesting depth…
+  tune   set with --threshold function.cognitive=N   ·   rules.thresholds.function.cognitive in code-split.toml
+  ref    docs/ERRORS.md#group-cpx
+```
+
+The rule id and group are present in every `--output-format`: the block header
+(`human`), `"rule"` + `"group"` fields (`json`), the annotation title (`github`),
+and `ruleId` plus a fired-rules `tool.driver.rules` catalog (`sarif`).
 
 ## `report`
 
@@ -218,7 +245,7 @@ The inline form takes a dotted key into the config schema:
 
 ```sh
 # tighten one rule in CI without editing code-split.toml
-code-split check --config rules.thresholds.node.cognitive=25 \
+code-split check --config rules.thresholds.function.cognitive=25 \
                  --config rules.cycles.test-embed=true
 ```
 

@@ -603,12 +603,13 @@ test-embed = false       # default: off  (Rust #[cfg(test)] back-edge)
 mutual     = true        # default: on
 chain      = true        # default: on
 
-[rules.thresholds.node]  # flag any single node exceeding the limit
+[rules.thresholds.module]  # a single module/crate (modules graph only)
 hk         = 500_000
-cyclomatic  = 25
 
-[rules.thresholds.avg]   # flag when graph-wide average exceeds the limit
-hk         = 50_000
+[rules.thresholds.file]  # a single file (files graph only)
+loc        = 800
+
+[rules.thresholds.function.avg]  # the functions-graph average
 cyclomatic  = 10
 ```
 
@@ -619,8 +620,11 @@ cyclomatic  = 10
   override a single setting inline via a dotted key (repeatable; inline wins)
 - `--ignore <GLOB>` — add a path glob (repeatable, merged with file)
 - `--cycle-rule <KIND=on|off>` — enable or disable a cycle check (e.g. `test-embed=on`)
-- `--threshold <SCOPE.METRIC=N>` — set a threshold (e.g. `node.hk=500000`); a
-  breach fails the check (`check` only)
+- `--threshold <SCOPE[.avg].METRIC=N>` — set a threshold (e.g. `file.loc=800`,
+  `function.avg.cyclomatic=10`); a breach fails the check (`check` only). SCOPE is
+  `file` / `module` / `function` (a single unit on that graph); add `.avg` for
+  that scope's graph-wide average. `N` accepts `_` separators and `K`/`M`/`G`
+  suffixes (e.g. `module.hk=5M`)
 - `--top <N>` — report only the `N` worst violations (`check` only); reporting
   limit, does not change the exit code
 - `--exit-zero` — exit 0 even when violations are found (`check` only,
@@ -630,7 +634,25 @@ cyclomatic  = 10
 fails `check`) or disabled (not checked). A cycle kind is on/off; a threshold is set or
 unset. There is no warning tier.
 
+**Rule ids and self-contained diagnostics**: every violation is identified by its
+dotted rule id — the same string used as the config key and CLI flag (e.g.
+`threshold.file.loc`) — and tagged with a concern group: `CYC` (dependency
+cycles), `CPX` (complexity), `CPL` (coupling), `SIZ` (size). The full reference is
+documented in [ERRORS.md](ERRORS.md). The default `human` output renders each
+finding as a self-contained block — rule id, group, location (`id — path:line`),
+measurement, rationale, fix, and the flag/config key that tunes the rule — so a
+single block copied from the terminal is a complete prompt for an AI assistant.
+The rule id and group are carried in every `--output-format` (block header,
+`json` `rule`/`group` fields, `github` annotation title, `sarif` `ruleId` plus a
+fired-rules `tool.driver.rules` catalog).
+
 The path of the config file actually used is recorded in the snapshot as `config_file`.
+
+**Invalid configuration is fatal**: a malformed config file, an unknown threshold
+scope/metric, or a bad inline `--config` / `--threshold` / `--cycle-rule` value
+aborts the command with a non-zero exit and a clear message — the tool never
+silently falls back to defaults, which would drop the user's rules and let
+`check` pass when it should fail (a false green for a CI gate).
 
 **Rationale**: Teams need to suppress expected patterns (e.g. `test-embed`
 cycles, dev-only crate noise) and enforce structural budgets in CI without

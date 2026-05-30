@@ -521,11 +521,29 @@ config filters: `config::apply_ignore` (path globs + `test_modules` +
 
 - **`check`** (the linter): runs the shared analysis core, then
   `config::check_violations` over enabled cycle checks (`--cycle-rule
-  <KIND=on|off>`) and metric thresholds (`--threshold`). Each rule is binary —
-  no severity tiers. Prints diagnostics in the selected `--output-format`
-  (`human` / `json` / `github` / `sarif`), honours `--top <N>` (report only the
-  N worst), and exits non-zero on any violation; `--exit-zero` suppresses the
-  non-zero exit. Writes no files.
+  <KIND=on|off>`) and metric thresholds (`--threshold <SCOPE[.avg].METRIC=N>`).
+  Each rule is binary — no severity tiers. Threshold scopes map one-to-one to the
+  graphs: `file` (files graph), `module` (modules graph), `function` (functions
+  graph). Each scope is a `config::ScopeThresholds` with a `single` bucket
+  (`#[serde(flatten)]`, metrics written directly under the scope table) and an
+  `avg` bucket (nested `<scope>.avg` table). Per graph, `check_node_metrics` runs
+  that graph's `single` bucket on every node and `check_avg_metrics` runs its
+  `avg` bucket against the graph stats — emitting `threshold.<scope>.<metric>` and
+  `threshold.<scope>.avg.<metric>` respectively. Threshold values accept `_`
+  separators and `K`/`M`/`G` suffixes via `config::parse_number` (CLI flags and a
+  `deserialize_with` adaptor on `MetricThresholds` for quoted TOML strings); an
+  invalid configuration is a hard error, never a silent fallback to defaults. Every `Violation` is identified
+  by its dotted rule id (the config key / CLI flag, e.g. `threshold.file.loc`) and
+  tagged with a concern group from the `config::RULES` catalog
+  (`CYC`/`CPX`/`CPL`/`SIZ`; one entry per metric resolved by `rule_doc` — the
+  trailing metric segment — with `rule_tuning` deriving the flag/config knob,
+  documented in [ERRORS.md](ERRORS.md)). Prints diagnostics in the selected `--output-format`
+  (`human` / `json` / `github` / `sarif`): `human` (`print_human_diagnostics`)
+  renders each finding as a self-contained block (rule id, group, `where` = `id —
+  path:line`, `issue`, `why`, `fix`, `tune`, `ref`) so it doubles as an AI prompt;
+  `sarif` describes the fired rules under `tool.driver.rules`. Honours `--top <N>`
+  (report only the N worst) and exits non-zero on any violation; `--exit-zero`
+  suppresses the non-zero exit. Writes no files.
 - **`report`**: runs the shared analysis core (re-analyzing the workspace),
   then writes artifacts into `--report-path` (default `.code-split`) per
   `--format` (`json`, `html`; default both). The JSON snapshot records

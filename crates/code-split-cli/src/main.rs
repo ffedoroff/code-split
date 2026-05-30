@@ -88,8 +88,10 @@ enum Command {
         #[arg(long = "cycle-rule", value_name = "KIND=on|off")]
         cycle_rules: Vec<String>,
 
-        /// Metric threshold: SCOPE.METRIC=N (e.g. node.cognitive=25).
-        #[arg(long = "threshold", value_name = "SCOPE.METRIC=N")]
+        /// Metric threshold: SCOPE[.avg].METRIC=N. SCOPE is file|module|function;
+        /// N accepts `_` separators and K/M/G suffixes (e.g. function.cognitive=25,
+        /// module.hk=5M, file.avg.loc=1_500).
+        #[arg(long = "threshold", value_name = "SCOPE[.avg].METRIC=N")]
         thresholds: Vec<String>,
 
         /// Diagnostics format.
@@ -253,6 +255,9 @@ fn analyze_workspace(
         .with_context(|| format!("workspace not found: {}", args.workspace.display()))?;
     let cwd = std::env::current_dir()?;
 
+    // A bad config (malformed file, unknown scope/metric, bad inline override) is a
+    // hard error — silently falling back to defaults would drop the user's rules and
+    // let `check` pass when it should fail (a false green for a CI gate).
     let loaded = config::load(
         &target,
         &args.config,
@@ -260,13 +265,7 @@ fn analyze_workspace(
         cycle_rules,
         thresholds,
     )
-    .unwrap_or_else(|e| {
-        logger::info(&format!("config warning: {e}"));
-        config::LoadedConfig {
-            config: Default::default(),
-            source_file: None,
-        }
-    });
+    .context("configuration error")?;
     let cfg = loaded.config;
     if let Some(f) = &loaded.source_file {
         logger::info(&format!("config: {f}"));
@@ -390,7 +389,12 @@ fn run_check(
         None => &a.violations[..],
     };
 
-    emit_diagnostics(shown, output_format);
+    let project = a
+        .target
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("workspace");
+    emit_diagnostics(shown, total, &a.plugin_name, project, output_format);
 
     if total > 0 && !exit_zero {
         anyhow::bail!("{total} violation(s) found");
@@ -399,37 +403,135 @@ fn run_check(
 }
 
 /// Render check diagnostics to stdout in the requested format.
-fn emit_diagnostics(violations: &[config::Violation], format: OutputFormat) {
+fn emit_diagnostics(
+    violations: &[config::Violation],
+    total: usize,
+    plugin: &str,
+    project: &str,
+    format: OutputFormat,
+) {
     match format {
-        OutputFormat::Human => {
-            for v in violations {
-                println!("{}: {}", v.graph, v.message);
-            }
-        }
+        OutputFormat::Human => print_human_diagnostics(violations, total, plugin, project),
         OutputFormat::Json => {
             let json = serde_json::to_string_pretty(violations).unwrap_or_else(|_| "[]".into());
             println!("{json}");
         }
         OutputFormat::Github => {
             for v in violations {
-                // GitHub Actions workflow-command annotation.
-                println!("::error title=code-split ({})::{}", v.graph, v.message);
+                // GitHub Actions workflow-command annotation (rule id in the title).
+                println!(
+                    "::error title=code-split {} ({})::{}",
+                    v.rule,
+                    v.graph,
+                    v.summary()
+                );
             }
         }
         OutputFormat::Sarif => println!("{}", sarif_document(violations)),
     }
 }
 
-/// Minimal SARIF 2.1.0 document for the violations.
+/// Human diagnostics: a short, self-contained block per violation — rule id,
+/// group, where, the measurement, why it matters, how to fix it, and how to tune
+/// it — so any single block can be pasted into an AI assistant as a complete prompt.
+fn print_human_diagnostics(
+    violations: &[config::Violation],
+    total: usize,
+    plugin: &str,
+    project: &str,
+) {
+    if total == 0 {
+        println!("✓ code-split check: no violations in {project} ({plugin} plugin).");
+        return;
+    }
+
+    println!("code-split check — {total} violation(s) in {project} ({plugin} plugin)");
+    if violations.len() < total {
+        println!(
+            "  showing the {} worst by severity; run without --top to see all",
+            violations.len()
+        );
+    }
+    println!(
+        "Each finding below is self-contained — copy a block into an AI assistant to act on it."
+    );
+    println!("Full rule reference: docs/ERRORS.md\n");
+
+    for v in violations {
+        let doc = config::rule_doc(&v.rule);
+        println!("{}  ·  {}  ·  {} graph", v.rule, v.group, v.graph);
+        if !v.location.is_empty() {
+            println!("  where  {}", v.location);
+        }
+        println!("  issue  {}", v.message);
+        if let Some(d) = doc {
+            println!("  why    {}", d.why);
+            println!("  fix    {}", d.fix);
+        }
+        let tune = config::rule_tuning(&v.rule);
+        if !tune.is_empty() {
+            println!("  tune   {tune}");
+        }
+        println!("  ref    docs/ERRORS.md#group-{}", v.group.to_lowercase());
+        println!();
+    }
+
+    // Tail breakdown by concern group so the end of the output summarizes at a glance.
+    let mut counts: Vec<(&str, usize)> = Vec::new();
+    for v in violations {
+        match counts.iter_mut().find(|(g, _)| *g == v.group) {
+            Some((_, n)) => *n += 1,
+            None => counts.push((v.group, 1)),
+        }
+    }
+    let breakdown = counts
+        .iter()
+        .map(|(g, n)| format!("{g}×{n}"))
+        .collect::<Vec<_>>()
+        .join("  ");
+    let scope = if violations.len() < total {
+        "shown"
+    } else {
+        "total"
+    };
+    println!("Summary ({scope}): {breakdown}");
+}
+
+/// Minimal SARIF 2.1.0 document. `ruleId` is the dotted rule id (e.g.
+/// `threshold.file.loc`); the rules that actually fired are described under
+/// `tool.driver.rules` (id, group, rationale, helpUri) so the report is self-documenting.
 fn sarif_document(violations: &[config::Violation]) -> String {
+    // Distinct fired rule ids, first-seen order, so each results.ruleId resolves.
+    let mut seen: Vec<&config::Violation> = Vec::new();
+    for v in violations {
+        if !seen.iter().any(|s| s.rule == v.rule) {
+            seen.push(v);
+        }
+    }
+    let rules: Vec<serde_json::Value> = seen
+        .iter()
+        .map(|v| {
+            let doc = config::rule_doc(&v.rule);
+            serde_json::json!({
+                "id": v.rule,
+                "shortDescription": { "text": doc.map(|d| d.title).unwrap_or(v.rule.as_str()) },
+                "fullDescription": { "text": doc.map(|d| d.why).unwrap_or("") },
+                "helpUri": format!(
+                    "https://github.com/ffedoroff/code-split/blob/main/docs/ERRORS.md#group-{}",
+                    v.group.to_lowercase()
+                ),
+                "properties": { "group": v.group },
+            })
+        })
+        .collect();
     let results: Vec<serde_json::Value> = violations
         .iter()
         .map(|v| {
             serde_json::json!({
                 "ruleId": v.rule,
                 "level": "error",
-                "message": { "text": v.message },
-                "properties": { "graph": v.graph, "weight": v.weight },
+                "message": { "text": v.summary() },
+                "properties": { "group": v.group, "graph": v.graph, "weight": v.weight },
             })
         })
         .collect();
@@ -441,6 +543,7 @@ fn sarif_document(violations: &[config::Violation]) -> String {
                 "name": "code-split",
                 "informationUri": "https://github.com/ffedoroff/code-split",
                 "version": env!("CARGO_PKG_VERSION"),
+                "rules": rules,
             }},
             "results": results,
         }],

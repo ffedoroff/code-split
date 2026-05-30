@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/ffedoroff/code-split/actions/workflows/ci.yml/badge.svg)](https://github.com/ffedoroff/code-split/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/ffedoroff/code-split/branch/main/graph/badge.svg)](https://codecov.io/gh/ffedoroff/code-split)
+[![dependencies](https://deps.rs/crate/code-split/0.1.0-alpha.11/status.svg)](https://deps.rs/crate/code-split/0.1.0-alpha.11)
 [![Crates.io](https://img.shields.io/crates/v/code-split.svg)](https://crates.io/crates/code-split)
 [![npm](https://img.shields.io/npm/v/code-split.svg)](https://www.npmjs.com/package/code-split)
 [![PyPI](https://img.shields.io/pypi/v/code-split.svg)](https://pypi.org/project/code-split/)
@@ -30,7 +31,7 @@ Runs as a linter. Configure thresholds in `code-split.toml`; the CLI exits non-z
 
 ```sh
 code-split check . \
-  --threshold node.cognitive=25 --threshold node.loc=800
+  --threshold function.cognitive=25 --threshold file.loc=800
 ```
 
 The linter is the `check` command — exits non-zero on any cycle or threshold violation (`mutual` and `chain` cycle checks are on by default). See [docs/CLI.md](docs/CLI.md) for all flags.
@@ -101,6 +102,9 @@ Built-in plugins: `rust` (cargo + syn + rust-analyzer), `python`, `javascript` (
 
 ## Documentation
 
+- [CLI](docs/CLI.md) — commands, flags, and examples
+- [Rule reference](docs/ERRORS.md) — rule ids grouped by concern (`CYC`/`CPX`/`CPL`/`SIZ`), threshold scopes (`file`/`module`/`function`, each single + `.avg`), what each flags, and how to fix it
+- [Config](docs/config.md) — `code-split.toml` schema
 - [PRD](docs/PRD.md) — product requirements
 - [DESIGN](docs/DESIGN.md) — technical design
 - [Principles corpus](principles/) — Rust / Python / TypeScript principle catalogues used by the prompt generator

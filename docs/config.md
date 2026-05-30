@@ -7,7 +7,7 @@ Settings are merged from multiple sources. **Higher priority wins** for the same
 | Priority | Source | Example |
 |---|---|---|
 | 1 | CLI flags | `--ignore '**/tests/**'` |
-| 2 | `--config KEY=VALUE` inline override | `--config rules.thresholds.node.hk=200000` |
+| 2 | `--config KEY=VALUE` inline override | `--config rules.thresholds.module.hk=200000` |
 | 3 | `--config <file>` | `--config ci/code-split.toml` |
 | 4 | `code-split.toml` in cwd | `./code-split.toml` |
 | 5 | `code-split.toml` in workspace root | `<workspace>/code-split.toml` |
@@ -37,16 +37,32 @@ test-embed = false   # default — off (Rust #[cfg(test)] back-edge, not a smell
 mutual     = true    # default — on
 chain      = true    # default — on
 
-[rules.thresholds.node]   # any single node exceeds → violation
-hk         = 500_000
-cyclomatic  = 25
-cognitive   = 30
+[rules.thresholds.file]      # a single file (files graph only)
+loc        = 800
+
+[rules.thresholds.file.avg]  # the files-graph average
+loc        = 300
+
+[rules.thresholds.module]    # a single module/crate (modules graph only)
+hk         = 500_000         # `_` separators; or a quoted suffix: hk = "5M"
 fan_out     = 50
 
-[rules.thresholds.avg]    # graph-wide average exceeds → violation
-hk         = 50_000
-cyclomatic  = 10
+[rules.thresholds.function]  # a single function (functions graph only)
+cognitive  = 25
+loc        = 120
+
+[rules.thresholds.function.avg]  # the functions-graph average
+cyclomatic  = 8
 ```
+
+Threshold **scopes** — `file` / `module` / `function` — each apply to a single
+unit on that one graph (the scope *is* the graph), so a file and a function can
+carry different budgets. **Every scope also has an `.avg` sub-table** for that
+scope's graph-wide average. The single and `avg` buckets are independent.
+
+**Values** accept `_` digit separators and `K`/`M`/`G` suffixes (×10³/10⁶/10⁹):
+`5_123_000`, or a quoted `"5M"` in TOML (bare `5M` is invalid TOML), or bare on the
+CLI (`--threshold module.hk=5M`). See [ERRORS.md](ERRORS.md#threshold-scopes).
 
 ---
 
@@ -64,7 +80,7 @@ paths = ["**/tests/**"]
 test-embed = false
 mutual     = true
 
-[workspace.metadata.code-split.rules.thresholds.node]
+[workspace.metadata.code-split.rules.thresholds.module]
 hk = 500_000
 ```
 
@@ -112,13 +128,17 @@ Defaults: `test-embed` off, `mutual` and `chain` on. Repeatable.
 code-split check . --cycle-rule test-embed=on --cycle-rule chain=off
 ```
 
-### `--threshold <SCOPE.METRIC=N>`
+### `--threshold <SCOPE[.avg].METRIC=N>`
 
-Set a threshold — a breach fails the check. `SCOPE`: `node` | `avg`. `METRIC`:
-`hk` | `cyclomatic` | `cognitive` | `fan_in` | `fan_out` | `loc`. Repeatable.
+Set a threshold — a breach fails the check. `SCOPE`: `file` | `module` |
+`function` (a single unit on that graph). Add `.avg` for that scope's graph-wide
+average. `METRIC`: `hk` | `cyclomatic` | `cognitive` | `fan_in` | `fan_out` |
+`loc`. `N` accepts `_` separators and `K`/`M`/`G` suffixes (e.g. `5M`, `1_500`).
+Repeatable.
 
 ```bash
-code-split check . --threshold node.hk=500000 --threshold avg.cyclomatic=10
+code-split check . --threshold file.loc=800 --threshold function.cognitive=25 \
+  --threshold function.avg.cyclomatic=10
 ```
 
 ### `--exit-zero`
@@ -159,5 +179,5 @@ There are no severity levels. Every rule is binary:
 Or with inline overrides to tighten rules in CI without changing `code-split.toml`:
 
 ```bash
-code-split check . --cycle-rule test-embed=on --threshold node.hk=200000
+code-split check . --cycle-rule test-embed=on --threshold module.hk=200000
 ```

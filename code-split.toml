@@ -37,18 +37,23 @@ mutual     = true    # on  — two nodes that directly depend on each other
 chain      = true    # on  — three or more nodes in a dependency cycle
 
 # ── Threshold rules ────────────────────────────────────────────────────────────
-# [rules.thresholds.node]  — flag any single node whose metric exceeds the limit
-# [rules.thresholds.avg]   — flag when the graph-wide average exceeds the limit
+# One scope per graph (the scope IS the graph), each limiting a SINGLE unit:
+#   [rules.thresholds.file]      — a single file     (files graph only)
+#   [rules.thresholds.module]    — a single module   (modules graph only)
+#   [rules.thresholds.function]  — a single function (functions graph only)
+# Each scope also has an `.avg` sub-table for that scope's graph-wide average,
+# e.g. [rules.thresholds.function.avg].
 #
 # Available metrics: hk, cyclomatic, cognitive, fan_in, fan_out, loc
 # A set threshold fails `check` when exceeded; unset = not checked.
 
-# [rules.thresholds.node]
+# [rules.thresholds.module]
 # hk         = 500_000
-# cyclomatic  = 25
-# cognitive   = 30
 # fan_out     = 50
 
-# [rules.thresholds.avg]
-# hk         = 50_000
+# [rules.thresholds.function]
+# cognitive  = 25
+# loc        = 120
+
+# [rules.thresholds.function.avg]
 # cyclomatic  = 10
