@@ -15,7 +15,7 @@ fmt:
 	cargo fmt --all
 
 lint-md:
-	lychee --offline --no-progress 'docs/**/*.md' 'principles/**/*.md' 'AGENTS.md' 'CLAUDE.md'
+	lychee --offline --no-progress 'docs/**/*.md' 'contrib/**/*.md' 'principles/**/*.md' 'AGENTS.md' 'CLAUDE.md'
 	npx --yes markdownlint-cli2
 
 lint: clippy lint-md
