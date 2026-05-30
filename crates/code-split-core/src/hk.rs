@@ -1,5 +1,8 @@
-use crate::graph::Loc;
-use crate::{Complexity, Coupling, EdgeKind, Graph, NodeId, NodeKind, PluginGraphs};
+// Import from the defining modules (not the crate-root re-exports) so this module
+// depends "down" on `graph`/`snapshot` rather than "up" on the crate root — which
+// would close a `root → hk → root` cycle.
+use crate::graph::{Complexity, Coupling, EdgeKind, Graph, Loc, NodeId, NodeKind};
+use crate::snapshot::PluginGraphs;
 use std::collections::{HashMap, HashSet};
 
 pub fn annotate_hk(graphs: &mut PluginGraphs) {

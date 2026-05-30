@@ -1,4 +1,7 @@
-use crate::{Graph, Snapshot};
+// Import from the defining modules (not the crate-root re-exports) so this module
+// does not depend "up" on the crate root, which would close a dependency cycle.
+use crate::graph::Graph;
+use crate::snapshot::Snapshot;
 use serde::Serialize;
 use std::collections::HashMap;
 
