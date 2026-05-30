@@ -19,7 +19,7 @@ code-split-complexity = { path = "crates/code-split-complexity", version = "0.1.
 
 anyhow = "1.0"
 globset = "0.4"
-toml = "0.8"
+toml = "1"
 cargo_metadata = "0.18"
 chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4.5", features = ["derive"] }
@@ -30,7 +30,7 @@ syn = { version = "2", features = ["full", "visit"] }
 proc-macro2 = { version = "1", features = ["span-locations"] }
 tempfile = "3"
 thiserror = "1"
-which = "6"
+which = "8"
 
 rust-code-analysis = { package = "rust-code-analysis-code-split", version = "0.0.26-cs.0" }
 tree-sitter = "0.26.9"
