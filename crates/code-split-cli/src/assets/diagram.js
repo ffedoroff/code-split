@@ -389,7 +389,7 @@ function buildModalContent(node, level) {
 function setupTooltips(svgFrame, level) {
   svgFrame.querySelectorAll('g.edge title, g.cluster title').forEach(t => t.remove());
 
-  const nodeMap  = new Map((window.DIFF?.[level]?.nodes || []).map(n => [n.id, n]));
+  const nodeMap  = new Map(activeGraph(level).nodes.map(n => [n.id, n]));
   const section  = svgFrame.closest('.view');
   const gNodeMap = new Map();
 

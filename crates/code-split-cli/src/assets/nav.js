@@ -13,30 +13,14 @@ function currentLevel() {
   return document.querySelector('.view.active')?.dataset.view ?? null;
 }
 function switchToLevel(target) {
-  const chipStates = {};
-  document.querySelector('.view.active')
-    ?.querySelectorAll('.chip[data-chip]')
-    .forEach(c => { chipStates[c.dataset.chip] = c.classList.contains('active'); });
   document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.dataset.view === target));
   document.querySelectorAll('.report-switch a').forEach(l => l.classList.toggle('selected', l.dataset.view === target));
   const sec = document.querySelector('.view.active');
-  if (sec) {
-    sec.querySelectorAll('.chip[data-chip]').forEach(c => {
-      const id = c.dataset.chip;
-      if (id in chipStates && !c.classList.contains('disabled'))
-        c.classList.toggle('active', chipStates[id]);
-    });
-    sec._applyFrameClasses?.();
-    const matched = sec._detectPreset?.();
-    if (matched) setActivePreset(matched);
-    else showCustomState();
-    updateReviewButtons(sec);
-  }
   if (sec && sec.dataset.rendered !== 'true' && window.gv) renderView(sec);
 }
 function openModalForNode(nodeId, level) {
-  const nodeData = window.DIFF?.[level]?.nodes?.find(n => n.id === nodeId)
-    ?? (window.AFTER ?? window.BEFORE)?.graphs?.[level]?.nodes?.find(n => n.id === nodeId);
+  const nodeData = activeGraph(level).nodes.find(n => n.id === nodeId)
+    ?? window.DIFF?.[level]?.nodes?.find(n => n.id === nodeId);
   if (!nodeData) return false;
   const section = document.querySelector(`.view[data-view="${level}"]`);
   const overlay = getModal();

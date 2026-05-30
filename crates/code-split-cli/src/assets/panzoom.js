@@ -2,6 +2,9 @@ function setupPanZoom(frame, svg) {
   const vbAttr = svg.getAttribute('viewBox');
   if (!vbAttr) return;
   const [ox, oy, ow, oh] = vbAttr.split(/[ ,]+/).map(Number);
+  // The fit-all viewBox for this render — renderView compares against it to decide
+  // whether the user has panned/zoomed (and thus whether to preserve on re-render).
+  frame.dataset.naturalVB = `${ox} ${oy} ${ow} ${oh}`;
   let pan = null, didDrag = false, animFrame = null;
 
   function getVB() { return svg.getAttribute('viewBox').split(/[ ,]+/).map(Number); }
@@ -113,7 +116,7 @@ function setupPanZoom(frame, svg) {
           b.classList.toggle('active', b.dataset.size === window.nodeSizeMode));
         document.querySelectorAll('.view').forEach(sec => { sec.dataset.rendered = 'false'; });
         const active = document.querySelector('.view.active');
-        if (active && window.gv) renderView(active);
+        if (active && window.gv) renderView(active, { preserve: true });
       });
     });
 
@@ -138,11 +141,11 @@ function setupPanZoom(frame, svg) {
     navNext = navEl.nextSibling;
 
     const section = wrap.parentElement;
-    cpEl = section.querySelector('.control-panel');
-    cpParent = cpEl.parentElement;
-    cpNext = cpEl.nextSibling;
+    cpEl = section.querySelector('.control-panel');   // removed in the simplified UI
+    if (cpEl) { cpParent = cpEl.parentElement; cpNext = cpEl.nextSibling; }
 
-    fsBarEl.append(navEl, cpEl);
+    fsBarEl.append(navEl);
+    if (cpEl) fsBarEl.append(cpEl);
     wrap.appendChild(fsBarEl);
 
     const modal = document.getElementById('node-modal-overlay');

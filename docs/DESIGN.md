@@ -45,9 +45,9 @@ At P1 the platform ships three components:
   embedded in the binary via `include_str!`
 - **Diff Engine** (`code-split diff`): built into `code-split-cli`; compares
   two existing snapshot files (no analysis); produces an interactive HTML
-  diff report (client-side layout, Modules/Files/Functions tabs,
-  Before/After/Diff presets, filter chips) and/or a machine-readable JSON
-  diff with an `improved` / `degraded` / `neutral` verdict
+  diff report (client-side layout, Modules/Files/Functions tabs, a Before/After
+  toggle that renders each snapshot as its own clean diagram) and/or a
+  machine-readable JSON diff with an `improved` / `degraded` / `neutral` verdict
 
 The three pillars of the design are:
 
@@ -595,16 +595,16 @@ embedded into the `code-split` binary via `include_str!`. Files:
 
 | File | Purpose |
 |------|---------|
-| `index.html` | Shell template with three per-level view sections (Modules / Files / Functions), control panel (hidden in review mode), and diff/review summary table. Header has `.header-brand` ("CODE SPLIT") and `#title` (`<target> — diff/review`). Nav has `[data-review]` buttons (`Nodes: N`, `Edges: N`, `Cycles: N`) — review mode only; `[data-preset]` buttons — diff mode only; `#nav-prompt-btn` ("Prompt Generator AI") — always visible, opens the Prompt Generator popup for the active level. Cycle chips use labels `N removed` / `+N added`. Cycles chip group carries class `chips-cycles`. The header shows before/after metadata, the `↑ change` / `↑ compare…` snapshot-swap buttons (and `#btn-remove-after`), and `#custom-indicator` ("Identical"). |
-| `index.css` | Layout, nav, chips, SVG styling; CSS-class visibility toggles (`hide-nodes-added` etc. on `.svg-frame`) and cycle highlights (`show-cycle-before`/`show-cycle-after` — both render solid red stroke, no dasharray); `body.mode-review` rules: hides `[data-preset]` buttons and `.control-panel`; shows `[data-review]` buttons; hides `#meta-arrow`, after-group metadata, `[data-col="status"]` column; cross-highlight: `.row-hl` (solid blue bg) and `g.node.node-hl` (blue drop-shadow) for hover; `.row-selected` (solid amber bg `rgb(254,245,222)`) and `g.node.node-selected > polygon/ellipse` (yellow fill + amber stroke) for persistent selection — hover rules last so they win; `#node-modal` fills 100% width/height (fullscreen); `body.overflow:hidden` set on open, cleared on close. |
+| `index.html` | Shell template with three per-level view sections (Modules / Files / Functions) and the diff/review summary table. Header: `.header-brand` ("CODE SPLIT"), `#title` (`<target> — diff/review`), before/after metadata, and the `↑ change` / `↑ compare…` snapshot-swap buttons (`#btn-remove-after`). Nav: the `View:` level switcher (Modules / Files / Functions), `[data-side]` Before/After buttons (diff mode only — hidden in review), and `#nav-prompt-btn` ("Prompt Generator AI", always visible). No control panel / status chips / review buttons — the UI is simplified so Before/After each render a clean single-snapshot diagram. |
+| `index.css` | Layout, nav, SVG styling; cross-highlight: `.row-hl` (solid blue bg) and `g.node.node-hl` (blue drop-shadow) for hover; `.row-selected` (solid amber bg `rgb(254,245,222)`) and `g.node.node-selected > polygon/ellipse` (yellow fill + amber stroke) for persistent selection — hover rules last so they win; `body.mode-review` hides `#meta-arrow` and after-group metadata; `#node-modal` fills 100% width/height (fullscreen); `body.overflow:hidden` set on open, cleared on close. (Legacy chip / `hide-*` / `show-cycle-*` visibility rules remain in the file but are unused after the UI simplification.) |
 | `graphviz.umd.js` | Graphviz compiled to WASM via `@hpcc-js/wasm` (~802 KB, self-contained, no network required); renders DOT→SVG in-browser |
 | `diff.js` | Browser-side diff computation: `computeDiff()` (node/edge status), `computeCycles()` via `buildSCCOf()` helper — prefers backend `graph.cycles` array when present (accurate `CycleKind` classification); falls back to Tarjan SCC on edges when absent; marks nodes/edges as `before-only`/`after-only`/`both`/`none`; `computeMeta()` |
 | `layout.js` | `buildDOT()` — all nodes uniform blue (`fillcolor="#dbe9f4" color="#4d6f9c"`); all edges uniform blue solid (`color="#4d6f9c" style="solid"`); cycle-status class still added for CSS red-stroke overlay; `class="node-<kind> status-<status> cycle-status-<cs>"` on every node/edge |
 | `modal.js` | `getModal()` returns (or lazily creates) the `#node-modal` overlay; `closeModal()` / `closeModalSilent()` hide it and restore `body.overflow`; fixed-position tooltip on `.nm-has-hint`; delegated click handler for `.nm-copy-btn` |
 | `export-popup.js` | `openExportPopup(level)` — "Prompt Generator" popup. Top row: checkbox group (IDs / Paths / connections common / in / out) **OR** radio source selector (`Selected` = nodes checked in the node table; `Recommended` = top-N nodes sorted by HK then LOC, or by cycle membership for ADP preset) with numeric count input. Preset buttons map to named prompt templates (SOLID principles: ADP, SRP, OCP, LSP, ISP, DIP; DRY, KISS, LoD, MISU, CoI, YAGNI; plus Reduce Complexity, Split Components). Each preset auto-selects relevant checkboxes via `PRESET_CHECKS`. Named-principle prompts also append `Full principle: <url>` linking the full principle online (`principles/<lang>/<slug>.md` on GitHub via `PRINCIPLE_DOCS`/`principleUrl`; `lang` from the snapshot's `plugin`, JS→`typescript`). Textarea output = selected prompt text + node ids/paths/edge lists per active checkboxes. Fixed-size `Copy ⎘` button overlaid bottom-right of textarea. Popup is created once and re-used across opens. |
-| `panzoom.js` | `setupPanZoom()` — viewBox-based drag-to-pan; +/−/fit/fullscreen buttons bottom-right (visible when mouse in right 15% of frame); size-mode buttons (■/LOC/HK) top-right; no legend button; dblclick on SVG background zooms 2× at cursor; fullscreen overlay (`fs-bar`) slides in when mouse in top 15%, containing live `<nav>` and `.control-panel` DOM nodes |
-| `ui.js` | `CHIP_CLASSES` / `PRESETS` / `TOGGLE_CLASSES` state machine; `setupView()` populates chip counts, wires click handlers; visibility driven by CSS classes on `.svg-frame` |
-| `app.js` | `DOMContentLoaded` handler; initial preset is `before` (review mode) or `diff` (diff mode); `updateHeader()` / `setupReviewControls()` / `updateReviewButtons()` manage mode switching; `buildSummary()` is mode-aware; `renderView()` calls `drawSVG` then re-applies `window._ntSelected[level]` node-selected classes after every render (preserves selection across size-mode redraws); `#nav-prompt-btn` click handler calls `openExportPopup(currentLevel())`; `updateFilesTab()` toggles the Files tab by data presence; the `DOMContentLoaded` handler reads the inline `cs-before` / `cs-after` JSON `<script>` tags embedded in the page via `readEmbeddedSnapshot`; `setupFileControls()` / `recomputeAll()` let the user swap in a `.json` snapshot or a prior `.html` report from disk |
+| `panzoom.js` | `setupPanZoom()` — viewBox-based drag-to-pan; +/−/fit/fullscreen buttons bottom-right (visible when mouse in right 15% of frame); size-mode buttons (■/LOC/HK) top-right re-render the active view; dblclick on SVG background zooms 2× at cursor; stores the fit-all viewBox on `frame.dataset.naturalVB` so `renderView` can preserve pan/zoom across re-renders; fullscreen overlay (`fs-bar`) hosts the live `<nav>` (the control panel was removed) |
+| `ui.js` | Intentionally empty — before/after is now two separate clean diagrams (one graphviz layout per snapshot), so there is no chip-based filtering of a merged layout. Kept as a file because the report inlines its assets by name. |
+| `app.js` | `DOMContentLoaded` handler. `window.viewSide` (`'before'`/`'after'`) selects which snapshot the diagram / node table / modal show; `activeLocalGraph(level)` returns that snapshot's graph with external (3rd-party) nodes and their edges dropped (externals appear only in the per-node modal). `setViewSide()` (the Before/After buttons) re-renders the active view; `renderView()` runs `drawSVG`, re-applies `window._ntSelected[level]` selection, and — across Before/After **and** size-mode re-renders — preserves pan/zoom by carrying the *relative* zoom + fractional centre vs `frame.dataset.naturalVB` (so differing layout extents don't drift the framing). `updateHeader()` switches review/diff mode and shows/hides the Before/After buttons; `buildSummary()` is mode-aware. Reads inline `cs-before` / `cs-after` JSON via `readEmbeddedSnapshot`; `setupFileControls()` / `recomputeAll()` swap a `.json` snapshot or prior `.html` report from disk; `#nav-prompt-btn` → `openExportPopup(currentLevel())`; `updateFilesTab()` toggles the Files tab by data presence. |
 | `diagram.js` | `buildDiagramSVG(node, level)` — inline SVG popup diagram for a selected node. Edges are read from the raw snapshot (`window.AFTER ?? window.BEFORE`) so that external crate nodes (filtered from `window.DIFF` by `computeDiff`) are still visible. Outgoing and incoming edges are grouped by `kind` (`uses`, `calls`, `reexports`, `contains`) and rendered as proportionally-sized vertical columns left-to-right: column width = `max(1, min(count, floor(count/total × 4)))` card-slots; in-columns are bottom-anchored to the central node, out-columns are top-anchored. One arrow per column; non-`contains` arrows labelled `fan_in: N` / `fan_out: N` to the right. Main node width dynamically expands to cover all arrow X positions. `nodeMap` is augmented with external nodes from the raw snapshot so side-node cards render with correct metadata. `MAX_ITEMS = 24` per column. |
 | `nav.js` | `openModalForNode(nodeId, level)` — looks up node data first in `window.DIFF[level].nodes`, then falls back to the raw snapshot (`window.AFTER ?? window.BEFORE`) to support external crate nodes that are excluded from the diff. |
 
@@ -616,12 +616,10 @@ nodes or edges are promoted to `affected` status. Computed in `diff.js`
 before and after adjacency lists for each graph level. `contains` edges are
 excluded from SCC construction (they form a tree and create false positives
 via test-module parent references). Nodes/edges receive
-`cycle-status-{before-only|after-only|both|none}` class in the DOT output.
-The `before` chip highlights all elements that were in any cycle in the before
-snapshot (before-only ∪ both); the `after` chip highlights all elements
-currently in any cycle (after-only ∪ both). CSS override rules with
-specificity 0,4,1 (compound hide+show class on `.svg-frame`) force-show cycle
-elements even when node/edge visibility chips are toggled off.
+`cycle-status-{before-only|after-only|both|none}` class in the DOT output, and
+the summary table reports cycle counts per graph. (The chip-driven cycle
+highlighting was removed with the control panel in the UI simplification; the
+per-snapshot Before/After diagrams render each snapshot's own cycles inherently.)
 
 **Offline guarantee**: no CDN references in any asset; `graphviz.umd.js`
 embeds the WASM binary as a base91-encoded string and instantiates it from
@@ -1182,7 +1180,7 @@ code-split/
           panzoom.js       # Pan/zoom logic
           render.js        # SVG rendering, Catmull-Rom splines
           layout.js        # Dagre graph construction
-          ui.js            # Visibility toggling, chip updates
+          ui.js            # (empty — before/after now render as separate diagrams)
           main.js          # Entry point, event wiring
           diagram.js       # Popup fan-in/fan-out SVG diagram (column layout)
           nav.js           # openModalForNode — node popup navigation

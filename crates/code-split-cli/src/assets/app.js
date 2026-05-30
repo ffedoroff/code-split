@@ -1,23 +1,31 @@
-let activePreset = 'diff';
-
-function isGraphsIdentical() {
-  if (!window.AFTER || !window.DIFF) return false;
-  return ['modules', 'files', 'functions'].every(level => {
-    const d = window.DIFF[level];
-    return !d || (d.nodes.every(n => n.status === 'unchanged') &&
-                  d.edges.every(e => e.status === 'unchanged'));
-  });
+// Which snapshot the diagrams / tables / modal show: 'before' or 'after'.
+// In review mode (no after snapshot) it is always 'before'.
+function activeSnap() {
+  return window.viewSide === 'after' && window.AFTER ? window.AFTER : window.BEFORE;
+}
+function activeGraph(level) {
+  return activeSnap()?.graphs?.[level] || { nodes: [], edges: [] };
 }
 
-function setActivePreset(name) {
-  activePreset = name;
-  document.querySelectorAll('[data-preset]').forEach(b => b.classList.toggle('active', b.dataset.preset === name));
-  document.getElementById('custom-indicator').textContent = isGraphsIdentical() ? 'Identical' : '';
+// Same, but with external (3rd-party) nodes and their edges dropped — externals
+// belong only in the per-node neighbourhood modal, not the main map.
+function activeLocalGraph(level) {
+  const g = activeGraph(level);
+  const nodes = g.nodes.filter(n => !n.external);
+  const ids = new Set(nodes.map(n => n.id));
+  const edges = g.edges.filter(e => ids.has(e.from) && ids.has(e.to));
+  return { nodes, edges };
 }
 
-function showCustomState() {
-  document.querySelectorAll('[data-preset]').forEach(b => b.classList.remove('active'));
-  document.getElementById('custom-indicator').textContent = isGraphsIdentical() ? 'Identical' : 'Custom';
+// Toggle Before/After: re-render the active view from the chosen snapshot,
+// preserving the current pan/zoom (don't snap back to fit-all).
+function setViewSide(side) {
+  if (side === window.viewSide || (side === 'after' && !window.AFTER)) return;
+  window.viewSide = side;
+  document.querySelectorAll('[data-side]').forEach(b => b.classList.toggle('active', b.dataset.side === side));
+  document.querySelectorAll('.view').forEach(s => { s.dataset.rendered = 'false'; });
+  const active = document.querySelector('.view.active');
+  if (active && window.gv) renderView(active, { preserve: true });
 }
 
 function updateHeader() {
@@ -40,19 +48,12 @@ function updateHeader() {
   document.getElementById('btn-remove-after').style.display = hasAfter ? '' : 'none';
   document.getElementById('btn-upload-after').textContent   = isReview ? '↑ compare…' : '↑ change';
 
-  document.querySelectorAll('[data-preset="after"],[data-preset="diff"]').forEach(btn => {
-    btn.disabled = !hasAfter;
-    btn.classList.toggle('disabled', !hasAfter);
+  // Before/After toggle only in diff mode; review mode shows the single snapshot.
+  if (isReview) window.viewSide = 'before';
+  document.querySelectorAll('[data-side]').forEach(b => {
+    b.style.display = hasAfter ? '' : 'none';
+    b.classList.toggle('active', b.dataset.side === window.viewSide);
   });
-
-  if (!isReview && wasReview) {
-    setActivePreset('diff');
-    document.querySelectorAll('.view').forEach(sec => sec._applyPreset?.('diff'));
-  } else if (isReview && !wasReview) {
-    setActivePreset('before');
-    document.querySelectorAll('.view').forEach(sec => sec._applyPreset?.('before'));
-  }
-  updateReviewButtons(document.querySelector('.view.active'));
 }
 
 function updateFilesTab() {
@@ -80,32 +81,60 @@ function recomputeAll() {
   buildSummary();
   updateFilesTab();
 
-  // Reset rendered state; refresh chip counts first, then updateHeader may override
-  document.querySelectorAll('.view').forEach(sec => {
-    sec.dataset.rendered = 'false';
-    sec._refreshCounts?.();
-  });
+  // Reset rendered state for all views; the active one re-renders below.
+  document.querySelectorAll('.view').forEach(sec => { sec.dataset.rendered = 'false'; });
 
   updateHeader();
-  setActivePreset(activePreset);
 
   // Re-render active view
   const active = document.querySelector('.view.active');
   if (active && window.gv) renderView(active);
 }
 
-function renderView(section) {
-  if (section.dataset.rendered === 'true') return;
+function renderView(section, opts = {}) {
   const level   = section.dataset.view;
   const frame   = section.querySelector('.svg-frame');
   const loading = section.querySelector('.loading-indicator');
 
+  // Preserve pan/zoom across a re-render. The two layouts (before/after, or the
+  // size modes) have different coordinate extents, so we carry the view as
+  // *relative* zoom + fractional centre (vs each layout's fit-all viewBox) rather
+  // than absolute coords — otherwise the framing drifts when the extent changes.
+  let viewSpec = null, wasZoomed = false;
+  if (opts.preserve) {
+    const cur = frame.querySelector('svg')?.getAttribute('viewBox');
+    const nat = frame.dataset.naturalVB;
+    if (cur && nat && cur !== nat) {
+      const [cx, cy, cw, ch] = cur.split(/[ ,]+/).map(Number);
+      const [ox, oy, ow, oh] = nat.split(/[ ,]+/).map(Number);
+      if (ow > 0 && oh > 0) {
+        viewSpec = {
+          zw: cw / ow, zh: ch / oh,
+          fx: (cx + cw / 2 - ox) / ow,
+          fy: (cy + ch / 2 - oy) / oh,
+        };
+        wasZoomed = frame.classList.contains('zoomed');
+      }
+    }
+  }
+
   if (loading) { loading.textContent = 'Computing layout…'; loading.classList.add('on'); }
   setTimeout(() => {
-    drawSVG(frame, window.DIFF[level].nodes, window.DIFF[level].edges, level);
+    const g = activeLocalGraph(level);
+    drawSVG(frame, g.nodes, g.edges, level);
     window._ntSelected?.[level]?.forEach(id => section._gNodeMap?.get(id)?.classList.add('node-selected'));
+    if (viewSpec) {
+      const svg = frame.querySelector('svg');
+      const [ox, oy, ow, oh] = (frame.dataset.naturalVB || '0 0 0 0').split(/[ ,]+/).map(Number);
+      if (svg && ow > 0 && oh > 0) {
+        const nw = viewSpec.zw * ow, nh = viewSpec.zh * oh;
+        const cx = ox + viewSpec.fx * ow, cy = oy + viewSpec.fy * oh;
+        svg.setAttribute('viewBox', `${cx - nw / 2} ${cy - nh / 2} ${nw} ${nh}`);
+        if (wasZoomed) frame.classList.add('zoomed');
+      }
+    }
     section.dataset.rendered = 'true';
-    section._applyFrameClasses?.();
+    section._refreshNodeTable?.();
     if (loading) loading.classList.remove('on');
   }, 30);
 }
@@ -264,58 +293,10 @@ function setupFileControls() {
   });
 }
 
-const REVIEW_CHIP = { nodes: 'nodes-unchanged', edges: 'edges-unchanged', cycles: 'cycle-before' };
-
-function updateReviewButtons(section) {
-  if (!document.body.classList.contains('mode-review')) return;
-  const level = section?.dataset.view;
-  const diff  = window.DIFF?.[level];
-  const cy    = window.CYCLES?.[level];
-
-  const nodeCount  = diff?.nodes.filter(n => !n.external).length ?? 0;
-  const edgeCount  = diff?.edges.length ?? 0;
-  const cycleCount = cy ? (cy.cycleBoth + cy.cycleBefore + cy.cycleAfter) : 0;
-
-  const chipActive = id => section?.querySelector(`[data-chip="${id}"]`)?.classList.contains('active') ?? true;
-
-  const nodesBtn  = document.querySelector('[data-review="nodes"]');
-  const edgesBtn  = document.querySelector('[data-review="edges"]');
-  const cyclesBtn = document.querySelector('[data-review="cycles"]');
-
-  if (nodesBtn)  { nodesBtn.textContent  = `Nodes: ${nodeCount}`;   nodesBtn.classList.toggle('active',  chipActive('nodes-unchanged')); }
-  if (edgesBtn)  { edgesBtn.textContent  = `Edges: ${edgeCount}`;   edgesBtn.classList.toggle('active',  chipActive('edges-unchanged')); }
-  if (cyclesBtn) {
-    cyclesBtn.textContent = `Cycles: ${cycleCount}`;
-    cyclesBtn.classList.toggle('has-cycles', cycleCount > 0);
-    cyclesBtn.classList.toggle('active', chipActive('cycle-before') && cycleCount > 0);
-  }
-}
-
-function setupReviewControls() {
-  Object.entries(REVIEW_CHIP).forEach(([type, chipId]) => {
-    const btn = document.querySelector(`[data-review="${type}"]`);
-    if (!btn) return;
-    btn.addEventListener('click', () => {
-      const sec  = document.querySelector('.view.active');
-      const chip = sec?.querySelector(`[data-chip="${chipId}"]`);
-      if (!chip || chip.classList.contains('disabled')) return;
-      chip.classList.toggle('active');
-      sec._applyFrameClasses?.();
-      updateReviewButtons(sec);
-    });
-  });
-}
-
 function setupGlobalControls() {
-  document.querySelectorAll('[data-preset]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      if (btn.disabled || btn.classList.contains('disabled')) return;
-      const preset = btn.dataset.preset;
-      document.querySelector('.view.active')?._applyPreset?.(preset);
-      setActivePreset(preset);
-    });
+  document.querySelectorAll('[data-side]').forEach(btn => {
+    btn.addEventListener('click', () => setViewSide(btn.dataset.side));
   });
-
 
   document.querySelectorAll('.report-switch a[data-view]').forEach(a => {
     a.addEventListener('click', e => {
@@ -338,12 +319,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   window.CYCLES = computeCycles(window.BEFORE ?? EMPTY, window.AFTER ?? window.BEFORE ?? EMPTY);
   window.META   = computeMeta(window.BEFORE, window.AFTER);
 
-  document.querySelectorAll('.view').forEach(setupView);
+  window.viewSide = window.AFTER ? 'after' : 'before';
   document.querySelectorAll('.view').forEach(sec => setupNodeTable(sec, sec.dataset.view));
-  const initialPreset = window.AFTER === null ? 'before' : 'diff';
-  document.querySelectorAll('.view').forEach(sec => sec._applyPreset?.(initialPreset));
   setupGlobalControls();
-  setupReviewControls();
   setupSnapPopup();
   setupFileControls();
   setupTooltip();
@@ -366,7 +344,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   window.gv = await window['@hpcc-js/wasm/graphviz'].Graphviz.load();
 
   renderView(active);
-  setActivePreset(initialPreset);
 
   // Restore state from URL, then set initial history entry
   const { level: urlLevel, node: urlNode } = getNavParams();

@@ -38,13 +38,8 @@
     <span id="nav-files-item"><a data-view="files" href="#">Files</a> | </span><a data-view="functions" href="#">Functions</a>
   </div>
   <div class="nav-separator"></div>
-  <button data-review="nodes"  class="active">Nodes</button>
-  <button data-review="edges"  class="active">Edges</button>
-  <button data-review="cycles">Cycles</button>
-  <button data-preset="before">Before</button>
-  <button data-preset="after">After</button>
-  <button data-preset="diff">Diff</button>
-  <button data-preset="cycles">Cycles</button>
+  <button data-side="before">Before</button>
+  <button data-side="after">After</button>
   <button id="nav-prompt-btn">Prompt Generator <span class="nav-ai-letters">AI</span></button>
 </nav>
 
@@ -52,27 +47,6 @@
 
 <!-- ── Modules view ──────────────────────────────────────────────────────── -->
 <section class="view active" data-view="modules">
-  <div class="control-panel">
-    <div class="chips">
-      <span class="chips-label">Nodes:</span>
-      <button class="chip active" data-chip="nodes-added"     data-status="added">+? added</button>
-      <button class="chip active" data-chip="nodes-removed"   data-status="removed">−? removed</button>
-      <button class="chip active" data-chip="nodes-affected"  data-status="affected">? affected</button>
-      <button class="chip active" data-chip="nodes-unchanged" data-status="unchanged">? unchanged</button>
-    </div>
-    <div class="chips">
-      <span class="chips-label">Edges:</span>
-      <button class="chip active" data-chip="edges-added"     data-status="added">+? added</button>
-      <button class="chip active" data-chip="edges-removed"   data-status="removed">−? removed</button>
-      <button class="chip active" data-chip="edges-affected"  data-status="affected">? affected</button>
-      <button class="chip active" data-chip="edges-unchanged" data-status="unchanged">? unchanged</button>
-    </div>
-    <div class="chips chips-cycles">
-      <span class="chips-label">Cycles:</span>
-      <button class="chip active" data-chip="cycle-before" data-cycle="before-only">? removed</button>
-      <button class="chip active" data-chip="cycle-after"  data-cycle="after-only">+? added</button>
-    </div>
-  </div>
   <div class="frame-wrap">
     <div class="svg-frame" id="frame-modules"></div>
     <div class="loading-indicator" id="loading-modules">Loading…</div>
@@ -92,27 +66,6 @@
 
 <!-- ── Files view ────────────────────────────────────────────────────────── -->
 <section class="view" data-view="files">
-  <div class="control-panel">
-    <div class="chips">
-      <span class="chips-label">Nodes:</span>
-      <button class="chip active" data-chip="nodes-added"     data-status="added">+? added</button>
-      <button class="chip active" data-chip="nodes-removed"   data-status="removed">−? removed</button>
-      <button class="chip active" data-chip="nodes-affected"  data-status="affected">? affected</button>
-      <button class="chip active" data-chip="nodes-unchanged" data-status="unchanged">? unchanged</button>
-    </div>
-    <div class="chips">
-      <span class="chips-label">Edges:</span>
-      <button class="chip active" data-chip="edges-added"     data-status="added">+? added</button>
-      <button class="chip active" data-chip="edges-removed"   data-status="removed">−? removed</button>
-      <button class="chip active" data-chip="edges-affected"  data-status="affected">? affected</button>
-      <button class="chip active" data-chip="edges-unchanged" data-status="unchanged">? unchanged</button>
-    </div>
-    <div class="chips chips-cycles">
-      <span class="chips-label">Cycles:</span>
-      <button class="chip active" data-chip="cycle-before" data-cycle="before-only">? removed</button>
-      <button class="chip active" data-chip="cycle-after"  data-cycle="after-only">+? added</button>
-    </div>
-  </div>
   <div class="frame-wrap">
     <div class="svg-frame" id="frame-files"></div>
     <div class="loading-indicator" id="loading-files">Loading…</div>
@@ -132,27 +85,6 @@
 
 <!-- ── Functions view ────────────────────────────────────────────────────── -->
 <section class="view" data-view="functions">
-  <div class="control-panel">
-    <div class="chips">
-      <span class="chips-label">Nodes:</span>
-      <button class="chip active" data-chip="nodes-added"     data-status="added">+? added</button>
-      <button class="chip active" data-chip="nodes-removed"   data-status="removed">−? removed</button>
-      <button class="chip active" data-chip="nodes-affected"  data-status="affected">? affected</button>
-      <button class="chip active" data-chip="nodes-unchanged" data-status="unchanged">? unchanged</button>
-    </div>
-    <div class="chips">
-      <span class="chips-label">Edges:</span>
-      <button class="chip active" data-chip="edges-added"     data-status="added">+? added</button>
-      <button class="chip active" data-chip="edges-removed"   data-status="removed">−? removed</button>
-      <button class="chip active" data-chip="edges-affected"  data-status="affected">? affected</button>
-      <button class="chip active" data-chip="edges-unchanged" data-status="unchanged">? unchanged</button>
-    </div>
-    <div class="chips chips-cycles">
-      <span class="chips-label">Cycles:</span>
-      <button class="chip active" data-chip="cycle-before" data-cycle="before-only">? removed</button>
-      <button class="chip active" data-chip="cycle-after"  data-cycle="after-only">+? added</button>
-    </div>
-  </div>
   <div class="frame-wrap">
     <div class="svg-frame" id="frame-functions"></div>
     <div class="loading-indicator" id="loading-functions">Loading…</div>

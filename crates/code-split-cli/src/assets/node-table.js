@@ -33,7 +33,7 @@ function attachModalCheckbox(node, level, section) {
 
 function setupNodeTable(section, level) {
   const BASE = [
-    {id:'name',label:'Name'},{id:'kind',label:'Kind'},{id:'status',label:'Status'},
+    {id:'name',label:'Name'},{id:'kind',label:'Kind'},
     {id:'loc',label:'LOC'},{id:'hk',label:'HK'},
     {id:'fan_in',label:'Fan-in'},{id:'fan_out',label:'Fan-out'},
     {id:'h_vol',label:'H.vol'},{id:'h_bugs',label:'H.bugs'},{id:'h_effort',label:'H.effort'},
@@ -200,21 +200,9 @@ function setupNodeTable(section, level) {
 
   // ── Visibility filter ─────────────────────────────────────────────────────
   function getVisible() {
-    const nodes  = window.DIFF?.[level]?.nodes  || [];
-    const cycles = window.CYCLES?.[level];
-    const chip = {};
-    section.querySelectorAll('.chip[data-chip]').forEach(c => {
-      chip[c.dataset.chip] = c.classList.contains('active') && !c.classList.contains('disabled');
-    });
-    return nodes.filter(n => {
-      if (n.external) return false;
-      if (chip[`nodes-${n.status}`]) return true;
-      const cs = cycles?.nodeCycleStatus?.get(n.id);
-      if (!cs) return false;
-      if (cs === 'before-only') return !!chip['cycle-before'];
-      if (cs === 'after-only')  return !!chip['cycle-after'];
-      return !!(chip['cycle-before'] || chip['cycle-after']); // 'both'
-    });
+    // Show every (non-external) node of the active snapshot. Before/After picks
+    // which snapshot; there is no per-status chip filtering anymore.
+    return activeGraph(level).nodes.filter(n => !n.external);
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
