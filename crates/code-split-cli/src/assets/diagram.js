@@ -25,6 +25,16 @@ const NM_HINTS = {
   bugs:        'Estimated latent bugs B = V / 3000. Use as relative ranking, not absolute count.',
 };
 
+// Full display labels for abbreviated metric keys (tooltips still key off the
+// original short key via NM_HINTS).
+const NM_LABELS = {
+  hk:         'Henry-Kafura',
+  fan_in:     'Fan-in',
+  fan_out:    'Fan-out',
+  mi:         'Maintainability Index',
+  mi_sei:     'Maintainability Index (SEI)',
+};
+
 function buildDiagramSVG(node, level) {
   const diff      = window.DIFF?.[level];
   // Use raw snapshot edges so external crate nodes (filtered from DIFF) are still shown
@@ -38,6 +48,8 @@ function buildDiagramSVG(node, level) {
   const esc      = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   const trunc    = (s, n) => s.length > n ? s.slice(0, n - 1) + '…' : s;
   const nameOf   = n => trunc(n.name || n.id.split('::').pop() || n.id, 18);
+  // Private nodes get a " [pr]" suffix after the name.
+  const visTag   = n => (typeof n.visibility === 'string' && n.visibility === 'private') ? ' [pr]' : '';
   const fmtNum   = v => v != null ? String(Math.round(v)).replace(/\B(?=(\d{3})+(?!\d))/g, ',') : '—';
 
   // Per-kind visual config — KIND_ORDER controls left-to-right column order
@@ -194,19 +206,29 @@ function buildDiagramSVG(node, level) {
   const sideNode = ({node: n}, x, y) => {
     const inMap   = nodeMap.has(n.id);
     const cycle   = isCycleNode(n.id);
+    const ext     = n.external === true || n.kind === 'external';
     const hk      = fmtNum(n.complexity?.coupling?.hk);
     const loc     = n.complexity?.loc?.source != null ? String(n.complexity.loc.source) : '—';
     const cursor  = inMap ? 'pointer' : 'default';
     const clipId  = `sn-clip-${_snIdx++}`;
-    const stroke  = cycle ? '#c00' : (inMap ? '#8ba6c0' : '#bbb');
+    // External (3rd-party library) nodes are amber, matching the main map legend.
+    const fill    = ext ? '#f6e2c0' : '#f0f4f8';
+    const stroke  = cycle ? '#c00' : ext ? '#b3801f' : (inMap ? '#8ba6c0' : '#bbb');
     const strokeW = cycle ? '2' : '1';
+    // External library cards show their full id (`ext:serde_json`) centred, with
+    // no loc/hk (libraries carry no metrics). Internal files show name + loc/hk.
+    const inner = ext
+      ? `<tspan x="${x+SNW/2}" y="${y+SNH/2+4}" text-anchor="middle" font-size="11" font-weight="600">${esc(n.id)}</tspan>`
+      : `<tspan x="${x+SNW/2}" y="${y+17}" text-anchor="middle" font-size="11" font-weight="600">${esc(nameOf(n))}${visTag(n)}</tspan>` +
+        `<tspan x="${x+8}" dy="16" font-size="10" fill="#5c7a96">loc: ${esc(loc)}</tspan>` +
+        `<tspan x="${x+8}" dy="14" font-size="10" fill="#5c7a96">hk: ${esc(hk)}</tspan>`;
+    // Hover tooltip: the full path (or the id for external libraries).
+    const sideTip = ext ? n.id : ((n.path || '').replace(/^\{[^}]+\}\//, '') || n.id);
     return `<defs><clipPath id="${clipId}"><rect x="${x+4}" y="${y}" width="${SNW-8}" height="${SNH}"/></clipPath></defs>` +
-      `<g data-diag-node="${esc(n.id)}" style="cursor:${cursor}">` +
-      `<rect x="${x}" y="${y}" width="${SNW}" height="${SNH}" rx="6" fill="#f0f4f8" stroke="${stroke}" stroke-width="${strokeW}"/>` +
+      `<g data-diag-node="${esc(n.id)}" style="cursor:${cursor}"><title>${esc(sideTip)}</title>` +
+      `<rect x="${x}" y="${y}" width="${SNW}" height="${SNH}" rx="6" fill="${fill}" stroke="${stroke}" stroke-width="${strokeW}"/>` +
       `<g clip-path="url(#${clipId})"><text font-family="ui-monospace,'SF Mono',monospace" fill="#2c3e50">` +
-      `<tspan x="${x+SNW/2}" y="${y+17}" text-anchor="middle" font-size="11" font-weight="600">${esc(nameOf(n))}</tspan>` +
-      `<tspan x="${x+8}" dy="16" font-size="10" fill="#5c7a96">loc: ${esc(loc)}</tspan>` +
-      `<tspan x="${x+8}" dy="14" font-size="10" fill="#5c7a96">hk: ${esc(hk)}</tspan>` +
+      inner +
       `</text></g></g>`;
   };
 
@@ -233,7 +255,7 @@ function buildDiagramSVG(node, level) {
       const cx  = Math.round(c.x + c.px_w / 2);
       const my  = Math.round((c.y + c.h + MNY) / 2);
       s += `<line x1="${cx}" y1="${c.y + c.h}" x2="${cx}" y2="${MNY}" stroke="#4d6f9c" stroke-width="1.5" marker-end="url(#ah)"/>`;
-      if (c.kind !== 'contains')
+      if (c.kind !== 'contains' && c.all.length > 0)
         s += `<text x="${cx+5}" y="${my+4}" font-family="system-ui,sans-serif" font-size="10" fill="#5c7a96">fan_in: ${c.all.length}</text>`;
     });
   }
@@ -245,14 +267,30 @@ function buildDiagramSVG(node, level) {
   const mnValTrunc = (label, v) => trunc(v, Math.max(4, Math.floor((MNW - 20 - label.length * 7.2) / 7.2)));
   const mono = `font-family="ui-monospace,'SF Mono','Fira Code',monospace"`;
   const mnCycle = isCycleNode(node.id);
-  s += `<rect x="${MNX}" y="${MNY}" width="${MNW}" height="${MNH2}" rx="10" fill="#dbe9f4" stroke="${mnCycle ? '#c00' : '#4d6f9c'}" stroke-width="${mnCycle ? '3' : '2'}"/>`;
-  s += `<g clip-path="url(#mn-clip)">`;
-  s += `<text ${mono} x="${MNX+MNW/2}" y="${MNY+28}" text-anchor="middle" font-size="16" font-weight="700" fill="#1a2f45">${esc(trunc(node.name||node.id, 36))}</text>`;
+  // An external (3rd-party library) main node is amber, like its side cards,
+  // and carries no path/hk/loc — just its id.
+  const mnExt    = node.external === true || node.kind === 'external';
+  const mnFill   = mnExt ? '#f6e2c0' : '#dbe9f4';
+  const mnStroke = mnCycle ? '#c00' : mnExt ? '#b3801f' : '#4d6f9c';
   const nodePath = (node.path || '').replace(/^\{[^}]+\}\//, '');
-  s += `<text ${mono} x="${MNX+14}" y="${MNY+56}" font-size="11" fill="#2c3e50"><tspan font-weight="700">id: </tspan>${esc(mnValTrunc('id: ', node.id||''))}</text>`;
-  s += `<text ${mono} x="${MNX+14}" y="${MNY+74}" font-size="11" fill="#2c3e50"><tspan font-weight="700">path: </tspan>${esc(mnValTrunc('path: ', nodePath))}</text>`;
-  s += `<text ${mono} x="${MNX+14}" y="${MNY+92}" font-size="11" fill="#2c3e50"><tspan font-weight="700">hk: </tspan>${esc(hk)}</text>`;
-  s += `<text ${mono} x="${MNX+14}" y="${MNY+110}" font-size="11" fill="#2c3e50"><tspan font-weight="700">loc: </tspan>${esc(loc)}</text>`;
+  // The whole main card is click-to-copy: clicking it copies the path (the id
+  // for an external library). A `copy` cursor signals this; handled by the
+  // `.mn-card` listener in modal.js.
+  const copyVal = mnExt ? node.id : nodePath;
+  s += `<g class="mn-card" data-copy="${esc(copyVal)}"><title>click to copy ${mnExt ? 'id' : 'path'}</title>`;
+  s += `<rect x="${MNX}" y="${MNY}" width="${MNW}" height="${MNH2}" rx="10" fill="${mnFill}" stroke="${mnStroke}" stroke-width="${mnCycle ? '3' : '2'}"/>`;
+  s += `<g class="mn-card-body" clip-path="url(#mn-clip)">`;
+  if (mnExt) {
+    s += `<text ${mono} x="${MNX+MNW/2}" y="${MNY+MNH2/2+6}" text-anchor="middle" font-size="16" font-weight="700" fill="#1a2f45">${esc(trunc(node.id, 40))}</text>`;
+  } else {
+    s += `<text ${mono} x="${MNX+MNW/2}" y="${MNY+28}" text-anchor="middle" font-size="16" font-weight="700" fill="#1a2f45">${esc(trunc(node.name||node.id, 36))}${visTag(node)}</text>`;
+    s += `<text ${mono} x="${MNX+14}" y="${MNY+58}" font-size="11" fill="#2c3e50"><tspan font-weight="700">path: </tspan>${esc(mnValTrunc('path: ', nodePath))}</text>`;
+    s += `<text ${mono} x="${MNX+14}" y="${MNY+80}" font-size="11" fill="#2c3e50"><tspan font-weight="700">hk: </tspan>${esc(hk)}</text>`;
+    s += `<text ${mono} x="${MNX+14}" y="${MNY+102}" font-size="11" fill="#2c3e50"><tspan font-weight="700">loc: </tspan>${esc(loc)}</text>`;
+  }
+  s += `</g>`;
+  // Shown for ~1s after a copy (the body is hidden meanwhile, see index.css).
+  s += `<text class="mn-copied-msg" ${mono} x="${MNX+MNW/2}" y="${MNY+MNH2/2+7}" text-anchor="middle" font-size="22" font-weight="700" fill="#4d6f9c">copied</text>`;
   s += `</g>`;
 
   // Fan-out columns (below main node, top-anchored) — one arrow per column
@@ -261,7 +299,7 @@ function buildDiagramSVG(node, level) {
       const cx  = Math.round(c.x + c.px_w / 2);
       const my  = Math.round((MNY + MNH2 + c.y) / 2);
       s += `<line x1="${cx}" y1="${MNY+MNH2}" x2="${cx}" y2="${c.y}" stroke="#4d6f9c" stroke-width="1.5" marker-end="url(#ah)"/>`;
-      if (c.kind !== 'contains')
+      if (c.kind !== 'contains' && c.all.length > 0)
         s += `<text x="${cx+5}" y="${my+4}" font-family="system-ui,sans-serif" font-size="10" fill="#5c7a96">fan_out: ${c.all.length}</text>`;
       s += renderCol(c);
     });
@@ -288,7 +326,9 @@ function buildModalContent(node, level) {
     if (v == null || v === '') return;
     const hint = NM_HINTS[k];
     const attr = hint ? ` data-nm-hint="${hint.replace(/"/g, '&quot;')}"` : '';
-    cur.rows.push(`<tr><td class="nm-key${hint ? ' nm-has-hint' : ''}"${attr}>${k}</td><td class="nm-val">${v}</td></tr>`);
+    // Consistent capitalization: full label if known, else capitalize the key.
+    const label = NM_LABELS[k] || (k.charAt(0).toUpperCase() + k.slice(1));
+    cur.rows.push(`<tr><td class="nm-key${hint ? ' nm-has-hint' : ''}"${attr}>${label}</td><td class="nm-val">${v}</td></tr>`);
   };
   const sect = label => { sections.push(cur); cur = { label, rows: [] }; };
 
@@ -307,15 +347,12 @@ function buildModalContent(node, level) {
   };
 
   const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-  const copyBtn = v => `<button class="nm-copy-btn" data-copy="${esc(String(v))}" title="Copy">⎘</button>`;
-  if (node.id) cur.rows.push(`<tr><td class="nm-key">id${copyBtn(node.id)}</td><td class="nm-val">${esc(node.id)}</td></tr>`);
   if (path) {
-    const full = path + lineStr;
     const si   = path.lastIndexOf('/');
     const dir  = si >= 0 ? esc(path.slice(0, si + 1)) : '';
     const file = esc(si >= 0 ? path.slice(si + 1) : path);
     cur.rows.push(
-      `<tr><td class="nm-key">path${copyBtn(full)}</td><td class="nm-val">` +
+      `<tr><td class="nm-key">Path</td><td class="nm-val">` +
       `${dir}<strong>${file}</strong>${lineStr ? esc(lineStr) : ''}` +
       `</td></tr>`
     );

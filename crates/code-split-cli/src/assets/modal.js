@@ -29,6 +29,17 @@ document.addEventListener('click', e => {
   });
 });
 
+// Click-to-copy on the whole main card (an SVG <g>, so feedback is a CSS class,
+// not a textContent swap that would clobber the group's children).
+document.addEventListener('click', e => {
+  const card = e.target.closest('.mn-card');
+  if (!card || !card.dataset.copy) return;
+  navigator.clipboard.writeText(card.dataset.copy).then(() => {
+    card.classList.add('copied');
+    setTimeout(() => card.classList.remove('copied'), 1000);
+  });
+});
+
 document.addEventListener('mouseover', e => {
   const h = e.target.closest('.nm-has-hint');
   if (h && h.dataset.nmHint) {

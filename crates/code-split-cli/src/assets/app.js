@@ -7,11 +7,15 @@ function activeGraph(level) {
   return activeSnap()?.graphs?.[level] || { nodes: [], edges: [] };
 }
 
-// The graph drawn on the main map. External (3rd-party library) nodes are kept
-// and rendered in a distinct colour (depth-1 dependencies); they are excluded
-// only from the node table and the averages, not the diagram.
+// The graph drawn on the main map. External (3rd-party library) nodes and the
+// edges into them are dropped here — they would clutter the file map. They are
+// still kept in the snapshot and shown in the per-node neighbourhood modal.
 function activeLocalGraph(level) {
-  return activeGraph(level);
+  const g = activeGraph(level);
+  const nodes = g.nodes.filter(n => !n.external && n.kind !== 'external');
+  const ids = new Set(nodes.map(n => n.id));
+  const edges = g.edges.filter(e => ids.has(e.from) && ids.has(e.to));
+  return { nodes, edges };
 }
 
 // Toggle Before/After: re-render the active view from the chosen snapshot,
