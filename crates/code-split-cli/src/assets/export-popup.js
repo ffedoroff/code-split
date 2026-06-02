@@ -28,6 +28,63 @@ function principleUrl(key) {
   return slug ? `${PRINCIPLES_URL}/${principleLang()}/${slug}.md` : null;
 }
 
+// ── Metric values & thresholds (shared by the popup and the nav warning count) ─
+// Per-node value for each metric.
+const METRIC_VAL = {
+  sloc:       n => n.complexity?.loc?.source ?? n.loc ?? 0,
+  hk:         n => n.complexity?.coupling?.hk ?? 0,
+  fan_out:    n => n.complexity?.coupling?.fan_out ?? 0,
+  cyclomatic: n => n.complexity?.cyclomatic ?? 0,
+  cognitive:  n => n.complexity?.cognitive ?? 0,
+  item_count: n => n.item_count ?? 0,
+};
+
+// Two-tier thresholds per metric: `info` (worth a look) and `warning` (likely a
+// problem). EMPIRICALLY calibrated and **language-specific** (a language without
+// its own data falls back to `rust`). Targets: ~50 % of projects breach `info`,
+// ~10 % breach `warning` (binary: ≥1 file over the line).
+//
+// ⚠ SOURCE OF TRUTH IS SHARED WITH DOCS — every value here MUST be kept in sync
+// with `principles/<lang>/metric-thresholds.md` (Rust →
+// `principles/rust/metric-thresholds.md`), which records how each number was
+// derived. Change a threshold → update that file in the same commit; add a
+// language block → add its sibling md file too.
+const METRIC_TH_BY_LANG = {
+  // Rust — calibrated on 21 Rust crates (each ≥2K SLOC) from a 35-repo corpus.
+  // Sync: principles/rust/metric-thresholds.md
+  rust: {
+    hk:         { info: 150000, warning: 10000000 },
+    sloc:       { info: 800,    warning: 3000 },
+    fan_out:    { info: 8,      warning: 18 },
+    item_count: { info: 20,     warning: 50 },
+    // cyclomatic & cognitive are intentionally NOT tracked for Rust: file-level
+    // cyclomatic is ~1 (not aggregated) and cognitive is not emitted, so neither
+    // has a usable distribution. Presets that sort by them show no count.
+  },
+};
+// Thresholds for the analyzed language (plugin name; JS/TS use `rust`'s block
+// until their own corpora are calibrated).
+function metricThresholds() {
+  const lang = (window.AFTER ?? window.BEFORE)?.plugin || 'rust';
+  return METRIC_TH_BY_LANG[lang] || METRIC_TH_BY_LANG.rust;
+}
+
+// Distinct warning *types* — how many metrics have at least one internal file
+// over their `warning` threshold, plus `cycle` as one binary type (any file in
+// a dependency cycle). Shown next to the Prompt-Generator (AI) button.
+function warningTypeCount(level) {
+  const nodes = (window.DIFF?.[level]?.nodes || [])
+    .filter(n => !n.external && n.status !== 'removed');
+  const th = metricThresholds();
+  let count = Object.keys(th).filter(m =>
+    nodes.some(n => (METRIC_VAL[m]?.(n) ?? 0) > th[m].warning)
+  ).length;
+  const cy = window.CYCLES?.[level]?.nodeCycleStatus;
+  if (cy && nodes.some(n => { const cs = cy.get(n.id); return cs != null && cs !== 'none'; })) count += 1;
+  return count;
+}
+window.warningTypeCount = warningTypeCount;
+
 // ── Prompt-Generator state in the URL ────────────────────────────────────────
 // The popup persists its full state in the query string so a refresh restores it
 // exactly (open state, preset, source, count, sort metric, connection toggles,
@@ -260,7 +317,7 @@ and propose simplification if not.`,
         '<div class="exp-textarea-wrap">' +
           '<div id="export-preview" class="exp-md-preview"></div>' +
           '<textarea id="export-textarea" readonly></textarea>' +
-          '<button class="exp-copy-btn">Copy <span class="exp-copy-icon">⎘</span></button>' +
+          '<button class="exp-copy-btn">Copy markdown <span class="exp-copy-icon">⎘</span></button>' +
         '</div>' +
         '<div class="exp-presets">' +
           '<div class="exp-presets-label">Presets</div>' +
@@ -305,15 +362,6 @@ and propose simplification if not.`,
     'YAGNI':['conn-out'],
   };
 
-  // Per-node value for each sortable metric.
-  const METRIC_VAL = {
-    sloc:       n => n.complexity?.loc?.source ?? n.loc ?? 0,
-    hk:         n => n.complexity?.coupling?.hk ?? 0,
-    fan_out:    n => n.complexity?.coupling?.fan_out ?? 0,
-    cyclomatic: n => n.complexity?.cyclomatic ?? 0,
-    cognitive:  n => n.complexity?.cognitive ?? 0,
-    item_count: n => n.item_count ?? 0,
-  };
   // Short label + the `METRIC_DESCS`/`METRIC_FORMULAS` key (or an inline desc) for
   // each sort metric — used to explain the ordering in the generated prompt.
   const METRIC_INFO = {
@@ -331,18 +379,9 @@ and propose simplification if not.`,
     const formula = info.name && typeof METRIC_FORMULAS !== 'undefined' ? METRIC_FORMULAS[info.name] : '';
     return { label: info.label, desc: desc || '', formula: formula || '' };
   };
-  // Two-tier thresholds per metric: `neutral` (worth a look, yellow) and `red`
-  // (strongly recommended). Calibrated across real projects (healthy ≲5 % over
-  // red, poor ≳10 %). Drive the count colour, not a hard filter — selection is
-  // always the top-N sorted by the metric.
-  const METRIC_TH = {
-    hk:         { neutral: 25000, red: 50000 },
-    sloc:       { neutral: 1000,  red: 3000 },
-    fan_out:    { neutral: 5,     red: 8 },
-    cyclomatic: { neutral: 10,    red: 20 },
-    cognitive:  { neutral: 30,    red: 50 },
-    item_count: { neutral: 20,    red: 40 },
-  };
+  // Per-metric thresholds for the analyzed language (see module scope; tiers
+  // `info` / `warning`, empirically calibrated, synced with the principles docs).
+  const METRIC_TH = metricThresholds();
   // Default sort metric each preset selects in the dropdown.
   const PRESET_METRIC = {
     ADP: 'cycle', SRP: 'sloc', DRY: 'sloc', YAGNI: 'sloc',
@@ -358,7 +397,7 @@ and propose simplification if not.`,
   const internalNodes = () => allNodes.filter(n => !n.external && n.status !== 'removed');
 
   // For a sort metric: ALL candidate nodes sorted worst-first (so the count can
-  // keep adding rows), plus how many cross the `red` / `neutral` thresholds.
+  // keep adding rows), plus how many cross the `warning` / `info` thresholds.
   // `cycle` → only nodes in a cycle (sorted by HK).
   const recoFor = metric => {
     if (metric === 'cycle') {
@@ -366,15 +405,15 @@ and propose simplification if not.`,
       const hk = METRIC_VAL.hk;
       const inCycle = internalNodes().filter(n => cy?.nodeCycleStatus?.get(n.id) != null)
         .sort((a, b) => hk(b) - hk(a));
-      return { metric: 'cycle', sorted: inCycle, redCount: inCycle.length, neutralCount: inCycle.length };
+      return { metric: 'cycle', sorted: inCycle, warningCount: inCycle.length, infoCount: inCycle.length };
     }
     const th = METRIC_TH[metric] || METRIC_TH.hk;
     const val = METRIC_VAL[metric] || METRIC_VAL.hk, slocV = METRIC_VAL.sloc, itemV = METRIC_VAL.item_count;
     const sorted = internalNodes()
       .sort((a, b) => val(b) - val(a) || slocV(b) - slocV(a) || itemV(b) - itemV(a));
-    const redCount     = sorted.filter(n => val(n) > th.red).length;
-    const neutralCount = sorted.filter(n => val(n) > th.neutral).length;
-    return { metric, neutral: th.neutral, red: th.red, sorted, redCount, neutralCount };
+    const warningCount = sorted.filter(n => val(n) > th.warning).length;
+    const infoCount    = sorted.filter(n => val(n) > th.info).length;
+    return { metric, info: th.info, warning: th.warning, sorted, warningCount, infoCount };
   };
 
   const recCount = overlay.querySelector('.exp-rec-count');
@@ -403,43 +442,38 @@ and propose simplification if not.`,
     return selNodes;
   };
 
-  // Colour the count by the zone the current value falls in: red while within the
-  // strongly-recommended count, yellow up to the neutral count, normal beyond.
+  // Emphasis by zone: warning gets a calm text-colour highlight; info is left
+  // plain (no class) to keep the UI low-sensitivity.
   const colorCount = () => {
     const r = recoFor(activeMetric());
     const c = parseInt(recCount.value) || 0;
-    recCount.classList.remove('exp-rec-red', 'exp-rec-yellow');
-    if (c <= 0) return;
-    if (c <= r.redCount) recCount.classList.add('exp-rec-red');
-    else if (c <= r.neutralCount) recCount.classList.add('exp-rec-yellow');
+    recCount.classList.remove('exp-rec-warn');
+    if (c > 0 && c <= r.warningCount) recCount.classList.add('exp-rec-warn');
   };
 
   // Selecting a preset points the sort dropdown at its metric and sets the count
-  // to that preset's headline recommendation (strict count if any, else neutral).
+  // to that preset's headline recommendation (warning count if any, else info).
   const updateRecoUI = key => {
     const metric = (key && PRESET_METRIC[key]) || DEFAULT_SORT;
     sortSel.value = metric;
     const r = recoFor(metric);
-    recCount.value = String(r.redCount > 0 ? r.redCount : r.neutralCount);
+    recCount.value = String(r.warningCount > 0 ? r.warningCount : r.infoCount);
     colorCount();
   };
 
-  // Per-preset badge at the bottom of each preset button: the strongly-recommended
-  // count in red if any, else the (neutral) recommended count in normal colour,
-  // else nothing at all (no zeros, no blank space).
+  // Per-preset badge: warning-level count as a calm text-colour pill (a label);
+  // info-level count as a plain number (no pill, no emphasis); else nothing.
   const updatePresetBadges = () => {
     overlay.querySelectorAll('.exp-preset-btn').forEach(btn => {
       const badge = btn.querySelector('.exp-preset-count');
       if (!badge) return;
       const r = recoFor(PRESET_METRIC[btn.dataset.preset] || DEFAULT_SORT);
-      btn.classList.toggle('exp-preset-btn--danger', r.redCount > 0);
-      btn.classList.toggle('exp-preset-btn--warn', r.redCount === 0 && r.neutralCount > 0);
-      if (r.redCount > 0) {
-        badge.textContent = String(r.redCount);
-        badge.className = 'exp-preset-count exp-preset-count--red';
-      } else if (r.neutralCount > 0) {
-        badge.textContent = String(r.neutralCount);
-        badge.className = 'exp-preset-count exp-preset-count--yellow';
+      if (r.warningCount > 0) {
+        badge.textContent = String(r.warningCount);
+        badge.className = 'exp-preset-count exp-preset-count--warn';
+      } else if (r.infoCount > 0) {
+        badge.textContent = String(r.infoCount);
+        badge.className = 'exp-preset-count exp-preset-count--info';
       } else {
         badge.textContent = '';
         badge.className = 'exp-preset-count';

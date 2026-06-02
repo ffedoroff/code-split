@@ -88,6 +88,10 @@ function renderView(section, opts = {}) {
   const frame   = section.querySelector('.svg-frame');
   const loading = section.querySelector('.loading-indicator');
 
+  // Plain count of distinct warning types next to the Prompt-Generator (AI) button.
+  const warnEl = document.getElementById('nav-warn-count');
+  if (warnEl) { const n = window.warningTypeCount?.(level) ?? 0; warnEl.textContent = n ? String(n) : ''; }
+
   // Preserve pan/zoom across a re-render. The two layouts (before/after, or the
   // size modes) have different coordinate extents, so we carry the view as
   // *relative* zoom + fractional centre (vs each layout's fit-all viewBox) rather

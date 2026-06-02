@@ -39,6 +39,9 @@ nav button.disabled { opacity: 0.35; cursor: not-allowed; pointer-events: none; 
 .nav-ai-letters { color: #fff; font-weight: 700; display: inline-block;
                   animation: ai-pulse 2s ease-in-out infinite; }
 @keyframes ai-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.35); } }
+/* Warning-node count next to the AI button — plain text, no highlight. */
+.nav-warn-count { margin-left: 6px; font-weight: 400; }
+.nav-warn-count:empty { display: none; }
 .custom-indicator { color: #f39c12; font-size: 12px; font-style: italic; }
 
 main { padding: 16px 24px 40px; }
@@ -313,9 +316,10 @@ g.sn-hint:hover rect { fill: #d4c39a; }
 /* Recommendation criterion (e.g. `hk > 25,000`) shown next to the count. */
 .exp-sort-select { font-size: 13px; font-family: inherit; color: #2c3e50; cursor: pointer;
                    border: 1px solid #c8d4e0; border-radius: 4px; padding: 3px 6px; background: #fff; }
-/* Count colour by zone: red within the strict count, yellow up to the neutral count. */
-.exp-rec-red { color: #c0392b !important; font-weight: 700; }
-.exp-rec-yellow { color: #c08a00 !important; font-weight: 700; }
+/* Count emphasis: warning zone gets a calm text-colour highlight (no alarming
+   red); the info zone is left plain (no class added) to keep the UI low-key. */
+.exp-rec-warn { color: #2c3e50 !important; font-weight: 700; background: rgba(44,62,80,.10);
+                border-radius: 4px; }
 .exp-source-or { font-size: 11px; font-weight: 700; color: #aaa; letter-spacing: .06em;
                  white-space: nowrap; }
 .exp-source-group { display: flex; gap: 12px; align-items: center; flex-wrap: nowrap; }
@@ -358,22 +362,22 @@ g.sn-hint:hover rect { fill: #d4c39a; }
                   border: 1px solid #c8d4e0; background: #f8fafc; color: #2c3e50; cursor: pointer;
                   display: flex; flex-direction: row; align-items: center; gap: 4px; text-align: left; }
 .exp-preset-btn:hover { background: #dbe9f4; border-color: #4d6f9c; }
-/* A preset with strongly-recommended (red) / worth-a-look (yellow) nodes gets a
-   matching label + border colour, unless it is the active (selected) button. */
-.exp-preset-btn--danger:not(.exp-preset-btn--active) { color: #c0392b; border-color: #c0392b; }
-.exp-preset-btn--warn:not(.exp-preset-btn--active)   { color: #b07e00; border-color: #d9b441; }
+/* Low-sensitivity UI: presets get no button-level emphasis (border/colour) for
+   info or warning — only the count badge differs. */
 .exp-preset-btn--active { background: #2c6fad; border-color: #2c6fad; color: #fff; }
 .exp-preset-btn--active:hover { background: #2259a0; border-color: #2259a0; }
-/* Recommendation count badge: a filled circle/pill (red or yellow) with a light
-   digit; collapses to nothing when there is no count. */
+/* Recommendation count badge. `--warn`: a filled pill in the text colour (a calm
+   label/background, not red) with a light digit. `--info`: a plain right-aligned
+   number — no pill, no highlight. Collapses to nothing when there is no count. */
 .exp-preset-count { font-size: 10px; font-weight: 700; line-height: 16px; color: #fff;
                     display: inline-block; min-width: 16px; height: 16px; padding: 0 4px;
                     border-radius: 999px; text-align: center; margin-left: auto; }
 .exp-preset-count:empty { display: none; }
-.exp-preset-count--red    { background: #c0392b; }
-.exp-preset-count--yellow { background: #c79100; }
+.exp-preset-count--warn { background: #2c3e50; }
+.exp-preset-count--info { background: none; color: inherit; min-width: 0; height: auto;
+                          padding: 0; line-height: inherit; border-radius: 0; }
 .exp-copy-btn { position: absolute; bottom: 10px; right: 10px;
-                width: 104px; height: 36px; padding: 0;
+                width: 150px; height: 36px; padding: 0;
                 font-size: 13px; font-family: inherit; border-radius: 6px;
                 border: none; background: #4d6f9c; color: #fff; cursor: pointer;
                 box-shadow: 0 2px 8px rgba(0,0,0,.25); opacity: .92;
