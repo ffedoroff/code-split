@@ -36,6 +36,8 @@ const NM_LABELS = {
 };
 
 function buildDiagramSVG(node, level) {
+  // Nodes that are selected on the main map get the same yellow highlight here.
+  const selectedIds = window._ntSelected?.[level];
   const diff      = window.DIFF?.[level];
   // Use raw snapshot edges so external crate nodes (filtered from DIFF) are still shown
   const rawGraph  = (window.AFTER ?? window.BEFORE)?.graphs?.[level] || { nodes: [], edges: [] };
@@ -53,8 +55,8 @@ function buildDiagramSVG(node, level) {
   // Column visual config
   const COL_STROKE = '#8ba6c0';
   const COL_DASH   = '6,4';
-  // The external (3rd-party) column is amber, matching the library node styling.
-  const kindColor  = k => k === 'external' ? '#b3801f' : COL_STROKE;
+  // The external (3rd-party) column is grey, matching the library node styling.
+  const kindColor  = k => k === 'external' ? '#9aa0a6' : COL_STROKE;
   const kindDash   = _k => COL_DASH;
   // Abbreviated number for the card (e.g. 189,000 → 189K, 1,500,000 → 1.5M).
   const fmtK = v => {
@@ -117,13 +119,12 @@ function buildDiagramSVG(node, level) {
   const ARR_GAP     = 36;
   const SIDE_PAD    = 20;
   const MAX_ITEMS   = 24;
-  const MAX_COL_CARDS = 4;             // max cards per row in one column
-  const MAX_COL_ROWS  = 6;             // wrap into more columns past this many rows
+  const MAX_COL_CARDS = 6;             // cards per row before wrapping to a new row
   const MARG        = 20;
   const MNW_MIN     = 3 * CELL - 12 + 2 * COL_PAD_X;  // ≈ 492 minimum main-node width
 
   // Build column descriptors for one direction: one internal-connections column
-  // plus (when present) a separate amber `external` column on the same tier.
+  // plus (when present) a separate grey `external` column on the same tier.
   const buildCols = ({ internal, external }) => {
     const specs = [];
     if (internal.length) specs.push({ kind: 'connections', all: internal, ext: false });
@@ -137,10 +138,10 @@ function buildDiagramSVG(node, level) {
     if (raw.length === 0) return raw;
 
     for (const c of raw) {
-      // Wrap a tall column into more sub-columns once it would exceed
-      // `MAX_COL_ROWS` rows (e.g. 10 items → 2 columns of 5), capped at
-      // `MAX_COL_CARDS` wide.
-      c.cardW = Math.min(MAX_COL_CARDS, Math.max(1, Math.ceil(c.count / MAX_COL_ROWS)));
+      // Lay the column out WIDE first: fill up to `MAX_COL_CARDS` cards per row,
+      // then wrap to a new row below — so a busy node spreads horizontally
+      // instead of growing into a tall stack (e.g. 10 items → 6 + 4 over 2 rows).
+      c.cardW = Math.min(MAX_COL_CARDS, c.count);
       c.px_w  = c.cardW * CELL - 12 + 2 * COL_PAD_X;
       const rows = [];
       for (let i = 0; i < c.items.length; i += c.cardW)
@@ -184,8 +185,11 @@ function buildDiagramSVG(node, level) {
   // Main node width: at least MNW_MIN, but wide enough to cover all arrow X positions
   const allCols   = [...inCols, ...outCols];
   const arrowXs   = allCols.map(c => c.x + c.px_w / 2);
+  // The central card is never narrower than the fan-in or fan-out tier (their
+  // summed column width), so it visually spans the row above/below it.
+  const tiersW = Math.max(colsW(inCols), colsW(outCols));
   const MNW = allCols.length > 0
-    ? Math.max(MNW_MIN, 2 * Math.max(...arrowXs.map(x => Math.abs(x - VW / 2))) + 2 * COL_PAD_X)
+    ? Math.max(MNW_MIN, tiersW, 2 * Math.max(...arrowXs.map(x => Math.abs(x - VW / 2))) + 2 * COL_PAD_X)
     : MNW_MIN;
   const MNX  = (VW - MNW) / 2;
   const MNCX = MNX + MNW / 2;
@@ -212,7 +216,7 @@ function buildDiagramSVG(node, level) {
   let s = `<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 ${VW} ${VH}" preserveAspectRatio="xMidYMid meet">`;
   s += `<defs>` +
     `<marker id="ah" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3z" fill="#4d6f9c"/></marker>` +
-    `<marker id="ah-ext" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3z" fill="#b3801f"/></marker>` +
+    `<marker id="ah-ext" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3z" fill="#9aa0a6"/></marker>` +
     `<clipPath id="mn-clip"><rect x="${MNX+10}" y="${MNY}" width="${MNW-20}" height="${MNH2}"/></clipPath>` +
     `</defs>`;
 
@@ -238,14 +242,20 @@ function buildDiagramSVG(node, level) {
     const ext     = item.ext || n.external === true || n.kind === 'external';
     const cursor  = inMap ? 'pointer' : 'default';
     const clipId  = `sn-clip-${_snIdx++}`;
-    const fill    = ext ? '#f6e2c0' : '#f0f4f8';
-    const stroke  = cycle ? '#c00' : ext ? '#b3801f' : (inMap ? '#8ba6c0' : '#bbb');
+    // External (3rd-party library) cards are grey; internal file cards blue-grey.
+    const fill    = ext ? '#ececec' : '#f0f4f8';
+    const stroke  = cycle ? '#c00' : ext ? '#9aa0a6' : (inMap ? '#8ba6c0' : '#bbb');
     const strokeW = cycle ? '2' : '1';
     const mono    = `font-family="ui-monospace,'SF Mono',monospace"`;
     const clipDef = `<defs><clipPath id="${clipId}"><rect x="${x+4}" y="${y}" width="${SNW-8}" height="${SNH}"/></clipPath></defs>`;
     // No native `<title>` here: it would pop a second (browser) tooltip that
     // conflicts with the styled `#tt` tooltip shown on the labels.
-    const open    = `<g data-diag-node="${esc(n.id)}" style="cursor:${cursor}">` +
+    // `diag-ext` marks externals (not selectable, no source link — see modal.js);
+    // `diag-selected` mirrors the main-map selection highlight; `diag-cycle` keeps
+    // the red cycle stroke on top of the yellow selection (CSS).
+    const cls     = [ext ? 'diag-ext' : (selectedIds?.has(n.id) ? 'diag-selected' : ''),
+                     cycle ? 'diag-cycle' : ''].filter(Boolean).join(' ');
+    const open    = `<g data-diag-node="${esc(n.id)}"${cls ? ` class="${cls}"` : ''} style="cursor:${cursor}">` +
       `<rect x="${x}" y="${y}" width="${SNW}" height="${SNH}" rx="6" fill="${fill}" stroke="${stroke}" stroke-width="${strokeW}"/>`;
     // Path shown as a styled tooltip when hovering the name.
     const pathTip = ext ? (n.path || n.id)
@@ -326,7 +336,7 @@ function buildDiagramSVG(node, level) {
       // External edges use an amber arrow (matching the library styling) and
       // carry no fan_in/fan_out label — they are tracked as `fan_out_external`,
       // not part of fan_in/fan_out.
-      const stroke = c.ext ? '#b3801f' : '#4d6f9c';
+      const stroke = c.ext ? '#9aa0a6' : '#4d6f9c';
       const marker = c.ext ? 'ah-ext' : 'ah';
       s += `<line x1="${cx}" y1="${c.y + c.h}" x2="${cx}" y2="${MNY}" stroke="${stroke}" stroke-width="1.5" marker-end="url(#${marker})"/>`;
       if (!c.ext && c.kind !== 'contains' && c.all.length > 0)
@@ -346,8 +356,8 @@ function buildDiagramSVG(node, level) {
   // and carries no hk/loc — just its id and (when known) its cargo-cache path
   // (e.g. `{registry}/tokio-1.49.0`, which encodes the resolved version).
   const mnExt    = node.external === true || node.kind === 'external';
-  const mnFill   = mnExt ? '#f6e2c0' : '#dbe9f4';
-  const mnStroke = mnCycle ? '#c00' : mnExt ? '#b3801f' : '#4d6f9c';
+  const mnFill   = mnExt ? '#ececec' : '#dbe9f4';
+  const mnStroke = mnCycle ? '#c00' : mnExt ? '#9aa0a6' : '#4d6f9c';
   const nodePath = (node.path || '').replace(/^\{[^}]+\}\//, '');
   // The whole main card is click-to-copy: clicking it copies the path (the id
   // for an external library). A `copy` cursor signals this; handled by the
@@ -355,7 +365,12 @@ function buildDiagramSVG(node, level) {
   const copyVal = mnExt ? node.id : nodePath;
   // No native `<title>` (it would conflict with the styled `#tt` tooltips on the
   // card's labels); the click-to-copy affordance is the pointer cursor + feedback.
-  s += `<g class="mn-card" data-copy="${esc(copyVal)}">`;
+  // `diag-ext` (external) → inert under modifiers; `diag-selected` mirrors the
+  // selection highlight; `diag-cycle` keeps the red cycle stroke on top of it.
+  // `data-node-id` lets modal.js act on this central node.
+  const mnCls = [mnExt ? 'diag-ext' : (selectedIds?.has(node.id) ? 'diag-selected' : ''),
+                 mnCycle ? 'diag-cycle' : ''].filter(Boolean).join(' ');
+  s += `<g class="mn-card${mnCls ? ' ' + mnCls : ''}" data-node-id="${esc(node.id)}" data-copy="${esc(copyVal)}">`;
   s += `<rect x="${MNX}" y="${MNY}" width="${MNW}" height="${MNH2}" rx="10" fill="${mnFill}" stroke="${mnStroke}" stroke-width="${mnCycle ? '3' : '2'}"/>`;
   s += `<g class="mn-card-body" clip-path="url(#mn-clip)">`;
   if (mnExt) {
@@ -405,7 +420,7 @@ function buildDiagramSVG(node, level) {
       const my  = Math.round((MNY + MNH2 + c.y) / 2);
       // External edges use an amber arrow and carry no fan_out label
       // (tracked as `fan_out_external`, separate from `fan_out`).
-      const stroke = c.ext ? '#b3801f' : '#4d6f9c';
+      const stroke = c.ext ? '#9aa0a6' : '#4d6f9c';
       const marker = c.ext ? 'ah-ext' : 'ah';
       s += `<line x1="${cx}" y1="${MNY+MNH2}" x2="${cx}" y2="${c.y}" stroke="${stroke}" stroke-width="1.5" marker-end="url(#${marker})"/>`;
       if (!c.ext && c.kind !== 'contains' && c.all.length > 0)
@@ -443,6 +458,15 @@ function gitSourceUrl(git, relPath, line) {
   const blob = /(^|\/)github\.com\//i.test(base) ? 'blob' : '-/blob';   // GitLab uses /-/blob/
   const anchor = line != null ? `#L${line}` : '';
   return `${base}/${blob}/${ref}/${enc}${anchor}`;
+}
+
+// Git-host source URL for a node: only project files (external libs live
+// elsewhere), with the `{root}/` token stripped to a repo-relative path.
+// Returns null when there is no origin or it's an external node.
+function nodeSourceUrl(node) {
+  if (!node || node.external) return null;
+  const rel = (node.path || '').replace(/^\{[^}]+\}\//, '');
+  return gitSourceUrl(activeSnap()?.git, rel, node.line);
 }
 
 function buildModalContent(node, level) {
@@ -517,7 +541,7 @@ function buildModalContent(node, level) {
     // "Source" link to the file on the project's git host, computed from the
     // snapshot's `git.origin`. Only project files (external libs live elsewhere).
     if (!node.external) {
-      const url = gitSourceUrl(activeSnap()?.git, path, node.line);
+      const url = nodeSourceUrl(node);
       if (url) {
         const host = url.replace(/^https?:\/\//i, '').split('/')[0];
         cur.rows.push(
@@ -598,9 +622,20 @@ function buildModalContent(node, level) {
   };
 }
 
+// Reflect a node's selection on EVERY popup-diagram card for it. A node in a
+// dependency cycle appears twice — once as fan-in (top) and once as fan-out
+// (bottom) — plus possibly as the central card, so all instances must update.
+function markPopupSelected(nodeId, sel) {
+  const id = CSS.escape(nodeId);
+  document.querySelectorAll(
+    `#node-modal-diagram [data-diag-node="${id}"], #node-modal-diagram .mn-card[data-node-id="${id}"]`
+  ).forEach(el => el.classList.toggle('diag-selected', sel));
+}
+window.markPopupSelected = markPopupSelected;
+
 // Toggle a node's selection from the map, mirroring the table-row checkbox:
 // keep the shared selectedIds Set, the SVG highlight, the table row + checkbox,
-// and the "N selected" footer all in sync.
+// the popup-diagram cards, and the "N selected" footer all in sync.
 function toggleNodeSelected(node, level, section) {
   if (!window._ntSelected) window._ntSelected = {};
   if (!window._ntSelected[level]) window._ntSelected[level] = new Set();
@@ -618,17 +653,50 @@ function toggleNodeSelected(node, level, section) {
     const cb = row.querySelector('.nt-cb');
     if (cb) cb.checked = sel;
   }
+  markPopupSelected(node.id, sel);
   section?._updateAllCb?.();
 }
 
-// Holding Shift turns the main map into a node-selection surface: the cursor
-// changes (see `.shift-select` in the CSS) and clicking a node toggles its
-// selection instead of opening the modal.
-(function initShiftSelect() {
-  const set = on => document.body.classList.toggle('shift-select', on);
-  window.addEventListener('keydown', e => { if (e.key === 'Shift') set(true); });
-  window.addEventListener('keyup',   e => { if (e.key === 'Shift') set(false); });
-  window.addEventListener('blur',    () => set(false));
+// The "open source" modifier is platform-specific: ⌘ (Meta) on macOS — where
+// Ctrl is deliberately left alone (it maps to right-click) — and Ctrl elsewhere.
+const IS_MAC = /Mac|iP(hone|ad|od)/.test(
+  (typeof navigator !== 'undefined' && (navigator.platform || navigator.userAgent)) || ''
+);
+const OPEN_SRC_KEY = IS_MAC ? 'Meta' : 'Control';
+const isOpenSrcClick = e => (IS_MAC ? e.metaKey : e.ctrlKey);
+// Exposed on window so modal.js (the popup diagram) can mirror the gesture —
+// `const` declarations are not auto-attached to the global object.
+window.isOpenSrcClick = isOpenSrcClick;
+
+// Shortcut-legend markup with the platform's actual keys; reused by the main map
+// (`#kbd-hints`) and the popup (`#node-modal-hints`, filled in modal.js).
+function kbdHintsHtml() {
+  const srcKey = IS_MAC ? '⌘' : 'Ctrl';
+  return `<span class="kbd-hint"><kbd>⇧ Shift</kbd> + click — select node</span>` +
+         `<span class="kbd-hint"><kbd>${srcKey}</kbd> + click — view source</span>`;
+}
+window.kbdHintsHtml = kbdHintsHtml;
+
+// Map modifier modes, each changing the cursor (see the CSS) and rerouting node
+// clicks (see the click handler in setupTooltips):
+//   • Shift (`.shift-select`)      — toggle a node's selection instead of the modal;
+//   • ⌘ (mac) / Ctrl (`.ctrl-link`) — open the node's source on the git host.
+(function initMapModifiers() {
+  const setShift = on => document.body.classList.toggle('shift-select', on);
+  const setSrc   = on => document.body.classList.toggle('ctrl-link', on);
+
+  // Fill the bottom-left shortcut legend with the platform's actual keys.
+  const hints = document.getElementById('kbd-hints');
+  if (hints) hints.innerHTML = kbdHintsHtml();
+  window.addEventListener('keydown', e => {
+    if (e.key === 'Shift') setShift(true);
+    if (e.key === OPEN_SRC_KEY) setSrc(true);
+  });
+  window.addEventListener('keyup', e => {
+    if (e.key === 'Shift') setShift(false);
+    if (e.key === OPEN_SRC_KEY) setSrc(false);
+  });
+  window.addEventListener('blur', () => { setShift(false); setSrc(false); });
 })();
 
 function setupTooltips(svgFrame, level) {
@@ -652,6 +720,13 @@ function setupTooltips(svgFrame, level) {
     g.style.cursor = 'pointer';
     g.addEventListener('click', e => {
       e.stopPropagation();
+      // ⌘ (mac) / Ctrl = "open source": jump to the file on the git host.
+      // A modifier click is a navigation gesture — it never opens the modal.
+      if (isOpenSrcClick(e)) {
+        const url = nodeSourceUrl(node);
+        if (url) window.open(url, '_blank', 'noopener');
+        return;
+      }
       // Shift = "select mode": toggle this node's selection (same as ticking its
       // table-row checkbox) instead of opening the modal.
       if (e.shiftKey) { toggleNodeSelected(node, level, section); return; }
@@ -659,7 +734,7 @@ function setupTooltips(svgFrame, level) {
       const mc = buildModalContent(node, level);
       document.getElementById('node-modal-hdr-title').innerHTML = mc.hdr;
       document.getElementById('node-modal-body').innerHTML = mc.body;
-      document.getElementById('node-modal-diagram').innerHTML = mc.diagram;
+      window.setModalDiagram(mc.diagram);
       attachModalCheckbox(node, level, section);
       overlay.style.display = 'flex'; document.body.style.overflow = 'hidden';
       window.navPush?.(level, node.id);

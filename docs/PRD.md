@@ -756,14 +756,27 @@ selects or deselects all visible rows (indeterminate when partial).
 Selection also works directly on the map: **holding Shift** turns the main
 diagram into a selection surface (the cursor changes over the SVG), and
 Shift-clicking an SVG node toggles its selection — exactly like ticking its
-table checkbox, kept in sync — instead of opening the modal.
+table checkbox, kept in sync — instead of opening the modal. Holding the
+**"open source" modifier** — **⌘ on macOS, Ctrl elsewhere** (Ctrl is left
+alone on macOS, where it maps to right-click) — likewise changes the cursor
+and turns a node click into "open source": it opens the file on the project's
+git host (from `git.origin`) in a new tab instead of the modal (project files
+only). While either modifier is held — or the cursor hovers the right edge — the map's
+right-side controls (zoom and node-size) and a bottom-left shortcut legend are
+revealed; the legend spells out the active keys for the platform (⌘ on macOS,
+Ctrl elsewhere).
 The modal popup opened by clicking a row or an SVG node is fullscreen
 (locks body scroll); it includes a synced selection checkbox, fields in
 order id (⎘ copy) → path (⎘ copy, filename bold) → source (a link to the
 file on the project's git host, built from `git.origin`; project files
 only) → kind → visibility → items/methods → cycle info → status → metric
 sections in a single column. Hover highlight (blue drop-shadow) takes CSS
-priority over selection highlight.
+priority over selection highlight. **Space** toggles the selection checkbox
+while the popup is open. The popup's neighbourhood diagram mirrors the map's
+gestures — Shift-click toggles a node's selection, ⌘/Ctrl-click opens its
+source — and shows the same yellow highlight for nodes already selected; its
+3rd-party (external) cards and arrows are drawn grey and are inert (not
+selectable, no source, no ⌘-navigation).
 
 **Rationale**: The diff is the quantitative answer to "did my
 refactoring reduce coupling?" Without it, the user must compare two

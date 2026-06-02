@@ -27,6 +27,9 @@ function attachModalCheckbox(node, level, section) {
       if (tableCb) tableCb.checked = sel;
     }
     section?._gNodeMap?.get(node.id)?.classList.toggle('node-selected', sel);
+    // Keep every popup-diagram card for this node in sync (a cycle node shows as
+    // both fan-in and fan-out, plus the central card).
+    window.markPopupSelected?.(node.id, sel);
     section?._updateAllCb?.();
   };
 }
@@ -270,7 +273,7 @@ function setupNodeTable(section, level) {
         const mc = buildModalContent(n, level);
         document.getElementById('node-modal-hdr-title').innerHTML = mc.hdr;
         document.getElementById('node-modal-body').innerHTML = mc.body;
-        document.getElementById('node-modal-diagram').innerHTML = mc.diagram;
+        window.setModalDiagram(mc.diagram);
         attachModalCheckbox(n, level, section);
         overlay.style.display = 'flex'; document.body.style.overflow = 'hidden';
         window.navPush(level, n.id);

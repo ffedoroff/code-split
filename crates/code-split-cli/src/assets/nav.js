@@ -29,7 +29,7 @@ function openModalForNode(nodeId, level) {
   const mc = buildModalContent(nodeData, level);
   document.getElementById('node-modal-hdr-title').innerHTML = mc.hdr;
   document.getElementById('node-modal-body').innerHTML = mc.body;
-  document.getElementById('node-modal-diagram').innerHTML = mc.diagram;
+  window.setModalDiagram(mc.diagram);
   attachModalCheckbox(nodeData, level, section);
   overlay.style.display = 'flex';
   document.body.style.overflow = 'hidden';

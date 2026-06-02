@@ -261,10 +261,11 @@ disk — accepting either a `.json` snapshot or a `.html` report.
 
 Per-node modal: clicking a node opens a fullscreen card; for project files its
 field list includes a **Source** link to the file on the project's git host
-(GitLab/GitHub, built from `git.origin` at the snapshot's commit). To select
-nodes without opening the modal, **hold Shift** over the map (the cursor
-changes) and Shift-click nodes — each toggles selection just like its table
-checkbox.
+(GitLab/GitHub, built from `git.origin` at the snapshot's commit). Two modifier
+gestures on the map skip the modal (the cursor changes while the modifier is
+held): **Shift-click** a node toggles its selection just like its table
+checkbox, and **⌘-click (macOS) / Ctrl-click (elsewhere)** opens that file's
+source on the git host in a new tab.
 
 ## Config
 
