@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
-use code_split_core::graph::{Complexity, CycleKind, Graph, Node};
-use code_split_core::snapshot::PluginGraphs;
+use code_split_graph::graph::{Complexity, CycleKind, Graph, Node};
+use code_split_graph::snapshot::PluginGraphs;
 use globset::{Glob, GlobSet, GlobSetBuilder};
 use serde::{Deserialize, Deserializer};
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -1085,7 +1085,7 @@ fn push(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use code_split_core::graph::{CycleGroup, Loc, NodeKind};
+    use code_split_graph::graph::{CycleGroup, Loc, NodeKind};
 
     #[test]
     fn parse_on_off_accepts_on_off_true_false() {

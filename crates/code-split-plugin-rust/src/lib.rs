@@ -1,12 +1,18 @@
 use anyhow::Result;
-use code_split_core::{
+use code_split_graph::{
     Edge, EdgeKind, Graph, GraphBuilder, Node, NodeKind, PluginGraphs, StageTime,
 };
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
-use crate::logger;
+use cargo_metadata::MetadataCommand;
+use code_split_plugin::logger;
+use rust_code_analysis::{ParserTrait, RustParser, metrics};
+
+mod crate_graph;
+mod ids;
+mod module_graph;
 
 pub fn run(workspace: &Path) -> Result<(PluginGraphs, Vec<StageTime>)> {
     let mut timings: Vec<StageTime> = Vec::new();
@@ -14,7 +20,7 @@ pub fn run(workspace: &Path) -> Result<(PluginGraphs, Vec<StageTime>)> {
 
     {
         let t = logger::Timer::start("syn: parsing modules and files");
-        code_split_syn::analyze(workspace, &mut builder)?;
+        syn_analyze(workspace, &mut builder)?;
         let n = builder.node_count();
         let detail = format!("{n} nodes");
         let ms = t.finish_quiet();
@@ -27,7 +33,12 @@ pub fn run(workspace: &Path) -> Result<(PluginGraphs, Vec<StageTime>)> {
 
     {
         let t = logger::Timer::start("complexity: cyclomatic / cognitive / halstead / MI / LOC");
-        let annotated = match code_split_complexity::analyze(workspace, &mut builder) {
+        let annotated = match code_split_plugin::complexity::annotate(
+            workspace,
+            &mut builder,
+            &["rs"],
+            |path, src| metrics(&RustParser::new(src, path, None), path),
+        ) {
             Ok(n) => n,
             Err(e) => {
                 logger::info(&format!("complexity skipped: {e:#}"));
@@ -281,4 +292,68 @@ pub fn version_string() -> Option<String> {
     } else {
         None
     }
+}
+
+/// Syntactic stage: resolve the workspace via `cargo metadata` and contribute
+/// the crate + module/use graphs.
+fn syn_analyze(workspace: &Path, builder: &mut GraphBuilder) -> Result<()> {
+    let manifest = workspace.join("Cargo.toml");
+    // code-split is an offline tool: it never fetches from the network. cargo
+    // metadata is run with --offline, so it resolves purely from the local cargo
+    // cache. If the cache isn't populated, surface an actionable error instead of
+    // silently going to the network.
+    //
+    // Why --offline (research notes, 2026-06-03):
+    //   Default `cargo metadata` resolves the FULL dependency graph (registry
+    //   index + every transitive dep, incl. private git deps). On a warm cache
+    //   that's instant; on a COLD CI runner it fetches all of that over the
+    //   network — observed ~170s, spent entirely in the fetch, not in analysis.
+    //
+    //   We compared three modes on a real project (user-provisioning), warm cache:
+    //     full       437 pkgs, resolve present   ~0.78s
+    //     --no-deps    1 pkg,  resolve = null     ~0.03s
+    //     --offline  437 pkgs, resolve present   ~0.34s  (cache-only, no network)
+    //
+    //   What `resolve` (the part needing the fetch) buys us, and what --no-deps
+    //   would cost (measured on the file-level graph of that same project):
+    //     - external crate nodes:        19 -> 0
+    //     - `uses` edges:               176 -> 84   (the 92 edges to external
+    //                                                 crates disappear)
+    //     - contains / reexports / local file nodes: UNCHANGED
+    //   i.e. --no-deps keeps the project's internal structure but drops every
+    //   external node and edge (and, in a multi-crate workspace, the
+    //   cross-crate dependency edges too — those also come from `resolve`).
+    //
+    //   --offline keeps the entire graph (identical to full) with zero network,
+    //   so it's the right default: it preserves external/cross-crate edges AND
+    //   makes the tool genuinely offline. The price is that the cargo cache must
+    //   be warm — hence the actionable error below when it isn't.
+    let metadata = MetadataCommand::new()
+        .manifest_path(&manifest)
+        .other_options(vec!["--offline".to_string()])
+        .exec()
+        .map_err(|err| offline_metadata_error(&manifest, err))?;
+
+    crate_graph::contribute(&metadata, builder);
+    module_graph::contribute(&metadata, builder)?;
+    Ok(())
+}
+
+/// `cargo metadata --offline` failed — almost always because the local cargo
+/// cache isn't populated for this project. Explain that code-split is offline
+/// and how to warm the cache, while still surfacing the underlying cargo error.
+fn offline_metadata_error(manifest: &Path, err: cargo_metadata::Error) -> anyhow::Error {
+    anyhow::anyhow!(
+        "cargo metadata (offline) failed for {manifest}\n\n\
+         code-split is an offline tool — it never downloads dependencies. It reads \
+         the dependency graph from cargo's local cache, which must already be \
+         populated for this project.\n\n\
+         Warm the cache once (with network), then re-run code-split:\n    \
+         cargo metadata --manifest-path {manifest} >/dev/null\n\
+         (a prior `cargo build` / `cargo fetch` works too).\n\n\
+         In CI: run code-split on the same image/cache as your build or test jobs, \
+         where the cache is already warm.\n\n\
+         Underlying cargo error: {err}",
+        manifest = manifest.display(),
+    )
 }

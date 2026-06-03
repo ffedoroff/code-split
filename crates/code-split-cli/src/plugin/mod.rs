@@ -1,21 +1,18 @@
-pub mod finalize;
-pub mod javascript;
-pub mod python;
-pub mod rust;
-
 use anyhow::{Result, bail};
-use code_split_core::{PluginGraphs, StageTime};
+use code_split_graph::{PluginGraphs, StageTime};
 use std::path::Path;
 
-/// Run a built-in plugin for the given workspace. Returns `(graphs, timings)`.
+/// Run a built-in language plugin for the given workspace. Returns
+/// `(graphs, timings)`.
 ///
-/// All plugins are compiled into the binary and run in-process — there is no
+/// Each language is its own crate (`code-split-plugin-{rust,python,javascript}`);
+/// they are compiled into the binary and dispatched here by name. There is no
 /// external/dynamic plugin loading.
 pub fn run(name: &str, workspace: &Path) -> Result<(PluginGraphs, Vec<StageTime>)> {
     match name {
-        "rust" => rust::run(workspace),
-        "python" => python::run(workspace),
-        "javascript" | "typescript" | "js" | "ts" => javascript::run(workspace),
+        "rust" => code_split_plugin_rust::run(workspace),
+        "python" => code_split_plugin_python::run(workspace),
+        "javascript" | "typescript" | "js" | "ts" => code_split_plugin_javascript::run(workspace),
         other => bail!("unknown plugin {other:?}; built-in plugins are: rust, python, javascript"),
     }
 }

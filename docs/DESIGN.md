@@ -71,12 +71,12 @@ The three pillars of the design are:
 
 | Requirement | Design Response |
 |-------------|-----------------|
-| `cpt-code-split-fr-rust-plugin` | Implemented by `code-split-syn`, orchestrated in-process by `code-split-cli`'s `plugin::rust` module, which collapses the module graph to a file graph. Outputs a single snapshot `.json`. |
-| `cpt-code-split-fr-lang-plugins` (Python, JS/TS) | Python: `plugin::python` using `tree-sitter-python`. JS/TS: `plugin::javascript` using `tree-sitter-javascript` / `tree-sitter-typescript`, supporting both ESM and CommonJS. Both emit `File` nodes + file→file `uses` edges + `External` library nodes, and annotate per-file complexity via `code-split-complexity`. |
+| `cpt-code-split-fr-rust-plugin` | Implemented by the `code-split-plugin-rust` crate (cargo metadata + `syn`), which collapses the module graph to a file graph. Dispatched in-process by `code-split-cli`'s `plugin` registry. Outputs a single snapshot `.json`. |
+| `cpt-code-split-fr-lang-plugins` (Python, JS/TS) | Python: `code-split-plugin-python` using `tree-sitter-python`. JS/TS: `code-split-plugin-javascript` using `tree-sitter-javascript` / `tree-sitter-typescript`, supporting both ESM and CommonJS. Both emit `File` nodes + file→file `uses` edges + `External` library nodes, and annotate per-file complexity via the shared `code-split-plugin` crate. |
 | `cpt-code-split-fr-file-graph` | All plugins emit a single file graph: `File` nodes with `uses` / `reexports` edges between files, plus `External` library nodes at depth 1 reached by `uses` edges flagged `external: true`. The Rust plugin derives it by collapsing its module graph; Python/JS/TS build it directly from import resolution. |
 | `cpt-code-split-fr-html-report` | Built-in Rust renderer in `code-split-cli`: `report` analyzes (or reads) the input, then renders an HTML template with inline assets alongside the JSON snapshot. |
 | `cpt-code-split-fr-node-sorting` | Node weight (fan-in + fan-out) is computed at render time and embedded in the HTML; client-side JavaScript sorts the table on user interaction. |
-| `cpt-code-split-fr-graph-diff` | Browser-side diff in the HTML viewer (`diff.js`), plus `compare_snapshots()` in `code-split-core` for the `check --baseline` regression gate: node/edge set difference on the file graph, weight delta per node, `affected` propagation. |
+| `cpt-code-split-fr-graph-diff` | Browser-side diff in the HTML viewer (`diff.js`), plus `compare_snapshots()` in `code-split-graph` for the `check --baseline` regression gate: node/edge set difference on the file graph, weight delta per node, `affected` propagation. |
 | `cpt-code-split-fr-diff-html-report` | With `report --baseline <snapshot>` the viewer becomes a self-contained diff with color-coded baseline/current views and a verdict; all assets inlined; the file is named `…-diff.html`. |
 | `cpt-code-split-fr-diff-text-report` | `check --baseline <snapshot> --output-format json` emits the machine-readable verdict (`improved` / `degraded` / `neutral`) and the list of new violations for CI parsing. |
 
@@ -85,29 +85,37 @@ The three pillars of the design are:
 | NFR ID | Summary | Allocated To | Design Response |
 |--------|---------|--------------|-----------------|
 | `cpt-code-split-nfr-offline` | Zero outbound network calls | All components | Rust plugin: no HTTP; `code-split check` / `code-split report`: HTML assets embedded in binary, no CDN references in generated output. |
-| `cpt-code-split-nfr-performance` | ≤ 30 s @ 50k LOC (plugin); ≤ 5 s @ 10k nodes (check/report) | `code-split-syn`, `code-split-complexity`, `code-split-cli` | Syntactic analysis + the module→file collapse run in seconds (no rust-analyzer); `check` / `report` process a snapshot in a single pass. |
+| `cpt-code-split-nfr-performance` | ≤ 30 s @ 50k LOC (plugin); ≤ 5 s @ 10k nodes (check/report) | `code-split-plugin-rust`, `code-split-plugin`, `code-split-cli` | Syntactic analysis + the module→file collapse run in seconds (no rust-analyzer); `check` / `report` process a snapshot in a single pass. |
 | `cpt-code-split-nfr-portability` | JSON artifacts stable within a major version | All components | Schema version field in `meta`; consumers abort on mismatch; additive-only changes within a major version. |
 
 ### 1.3 Architecture Layers
 
 ```mermaid
 flowchart TD
-    subgraph step1["Step 1 — Rust Plugin (Rust binary)"]
-        cli["code-split-cli<br/>(orchestrator + module→file collapse)"]
-        syn["code-split-syn<br/>(syntactic analysis)"]
-        cx["code-split-complexity<br/>(per-file metrics)"]
-        core["code-split-core<br/>(graph types + JSON schema)"]
-        cli --> syn
-        cli --> cx
-        syn --> core
-        cx --> core
+    subgraph step1["Language plugins (Rust binary)"]
+        cli["code-split-cli<br/>(orchestrator + plugin dispatch)"]
+        pr["code-split-plugin-rust<br/>(cargo metadata + syn, module→file collapse)"]
+        pp["code-split-plugin-python<br/>(tree-sitter)"]
+        pj["code-split-plugin-javascript<br/>(tree-sitter)"]
+        plug["code-split-plugin<br/>(complexity, finalize, logging)"]
+        core["code-split-graph<br/>(graph types + JSON schema)"]
+        cli --> pr
+        cli --> pp
+        cli --> pj
+        pr --> plug
+        pp --> plug
+        pj --> plug
+        plug --> core
+        pr --> core
+        pp --> core
+        pj --> core
     end
 
     core -->|"snapshot (one `files` graph)"| artifacts["In-memory or JSON snapshot"]
 
     subgraph consume["Consumers (built-in Rust)"]
         check["code-split check<br/>(code-split-cli)"]
-        report["code-split report<br/>(code-split-cli)"]
+        report["code-split report<br/>(code-split-cli + code-split-viewer)"]
     end
 
     artifacts --> check
@@ -119,11 +127,11 @@ flowchart TD
 | Layer | Responsibility | Technology |
 |-------|---------------|------------|
 | Plugin — Presentation | Argument parsing, output routing, artifact writing | `clap`, `anyhow` (Rust) |
-| Plugin — Application | Orchestrate analyzers, collapse modules→files, assemble the snapshot | `code-split-cli` (Rust) |
-| Plugin — Domain | Graph types, JSON schema, builder API | `code-split-core`, `petgraph`, `serde` (Rust) |
-| Plugin — Infrastructure | Syntactic analysis, per-file complexity metrics | `code-split-syn`, `code-split-complexity`, `syn`, `rust-code-analysis` (Rust) |
+| Plugin — Application | Dispatch language plugins, assemble the snapshot | `code-split-cli` (Rust) |
+| Plugin — Domain | Graph types, JSON schema, builder API | `code-split-graph`, `petgraph`, `serde` (Rust) |
+| Plugin — Infrastructure | Per-language analysis (one crate each) on a shared plugin layer (complexity, finalize, logging) | `code-split-plugin-rust`/`-python`/`-javascript`, `code-split-plugin`, `syn`, `tree-sitter`, `rust-code-analysis` (Rust) |
 | Check | Analyze (or read) input, evaluate rules and (with `--baseline`) regressions, print diagnostics, exit non-zero on violation | `code-split-cli` (Rust) |
-| Report | Analyze (or read) input, write snapshot JSON + offline HTML viewer (a diff with `--baseline`) | `code-split-cli` (Rust), Graphviz WASM bundled in binary, assets embedded via `include_str!` |
+| Report | Analyze (or read) input, write snapshot JSON + offline HTML viewer (a diff with `--baseline`) | `code-split-cli` + `code-split-viewer` (Rust), Graphviz WASM bundled in binary, assets embedded via `include_str!` |
 
 ## 2. Principles & Constraints
 
@@ -202,26 +210,26 @@ analyzed, not the execution environment.
 
 ### 3.1 Domain Model
 
-**Technology**: Rust structs and enums in `code-split-core`; JSON schema
-in `crates/code-split-core/schemas/graph.schema.json`.
+**Technology**: Rust structs and enums in `code-split-graph`; JSON schema
+in `crates/code-split-graph/schemas/graph.schema.json`.
 
 | Entity | Description | Location |
 |--------|-------------|----------|
-| Graph | Ordered collection of nodes and edges; serialized to JSON as the single `files` graph | `crates/code-split-core/src/graph.rs` |
-| Node | `id`, `kind`, `name`, `path?`, `external?`, `version?` (resolved semver, on Rust crate/`External` nodes), `visibility?`, `complexity?`, `cycle_kind?` | `crates/code-split-core/src/graph.rs` |
-| Edge | `from`, `to`, `kind`, `external?`, `visibility?` | `crates/code-split-core/src/graph.rs` |
-| NodeKind | Enum. Output kinds: `File` (a project source file), `External` (a 3rd-party library at depth 1). The variants `Crate`, `Module`, `Trait` are internal-only — used by `code-split-syn` while building the Rust module tree and collapsed into `File`/`External` by the Rust plugin before serialization; they never appear in a snapshot. | `crates/code-split-core/src/graph.rs` |
-| EdgeKind | Enum. Output kinds: `Uses`, `Reexports` (both between files; `Uses` to an `External` node when the edge is flagged `external`), and `Contains`. A `Contains` edge records a Rust `mod foo;` declaration (parent file → child file): it is **kept in the JSON snapshot as structural ownership metadata**, but consumers treat it as ownership rather than information flow — it is not drawn on the main map and is excluded from fan_in / HK / cycle detection. Self-edges and cross-crate `Contains` are dropped during the collapse; only cross-file parent→child `Contains` survive. | `crates/code-split-core/src/graph.rs` |
-| CycleKind | Enum: `TestEmbed` (Rust `#[cfg(test)]` back-edge), `Mutual` (SCC size 2), `Chain` (SCC size ≥ 3). Set on each node in a cycle via `cycle_kind`. | `crates/code-split-core/src/graph.rs` |
-| CycleGroup | SCC with ≥ 2 nodes: `kind: CycleKind`, `nodes: Vec<NodeId>`. Stored in `Graph.cycles`. | `crates/code-split-core/src/graph.rs` |
-| NodeId | Stable string key with no line numbers or byte offsets. Schemes: `file:{path}` for a source file, `ext:{name}` for an external library. | `crates/code-split-core/src/graph.rs`, `crates/code-split-core/src/snapshot.rs` |
-| Complexity | Nested code-metrics object on a node. Top-level scalars: `cyclomatic`, `cognitive`, `exits`, `args`, `functions`, `closures` (zero-valued fields omitted). Sub-objects: `coupling?` (`fan_in`, `fan_out`, `fan_out_external`, `hk` — omitted when all fan values are 0), `maintainability?` (`mi`, `mi_sei`), `loc?` (`source`, `logical`, `comments`, `blank`), `halstead?` (`length`, `vocabulary`, `volume`, `effort`, `time`, `bugs`). Entire `complexity` object omitted when all sub-fields are zero/absent. Present on `File` nodes; absent on `External` nodes. All numeric fields use 3-significant-digit truncation; whole numbers serialized without decimal point. | `crates/code-split-core/src/graph.rs` |
-| Coupling | `fan_in`, `fan_out` (internal file→file counts), `fan_out_external` (distinct external libraries depended on), `hk` (Henry-Kafura from internal counts only). | `crates/code-split-core/src/graph.rs` |
-| AvgCoupling | Average coupling stored inside `GraphStats`: `fan_in`, `fan_out`, `hk` (all f64, zero-valued fields omitted). | `crates/code-split-core/src/graph.rs` |
-| GraphStats | Optional summary attached to the `files` graph after all annotations. Mirrors the `Complexity` node structure with averages: top-level `cyclomatic`, `cognitive`; sub-objects `coupling?` (`AvgCoupling`), `maintainability?`, `loc?`, `halstead?`. Zero-valued scalar fields and absent sub-objects are omitted. Percentiles are not stored — the viewer computes them client-side from raw node data. Populated by `annotate_stats()` in `code-split-core`. | `crates/code-split-core/src/graph.rs`, `crates/code-split-core/src/stats.rs` |
-| Snapshot | A single `.json` file combining `workspace` (cwd), `target` (analyzed project), `plugin`, `config_file?` (path of loaded config file, omitted when none), `roots` (named path prefixes; pruned to only those actually used to shorten a node path, so e.g. a JS/TS/Python snapshot carries no Rust toolchain roots), `versions`, `git`, `timings`, and a `graphs` object with a single key: `files`. Serialized via `to_canonical_string_pretty` — **canonical JSON**: every object key alphabetical, `nodes`/`edges` arrays sorted by stable key — so unchanged code re-serializes byte-for-byte (no `HashMap`-order churn). | `crates/code-split-core/src/snapshot.rs` |
-| StageTime | Per-stage timing entry: `stage` (name), `ms` (elapsed milliseconds), `detail` (human summary). Stored in `Snapshot.timings` in execution order. | `crates/code-split-core/src/snapshot.rs` |
-| CompareSummary | Computed from two `Snapshot`s (baseline, current) by `compare_snapshots`: added/removed/affected/unchanged counts for nodes and edges on the `files` graph, plus cycle/SCC counts per side. Drives the `check --baseline` regression gate. | `crates/code-split-core/src/diff.rs` |
+| Graph | Ordered collection of nodes and edges; serialized to JSON as the single `files` graph | `crates/code-split-graph/src/graph.rs` |
+| Node | `id`, `kind`, `name`, `path?`, `external?`, `version?` (resolved semver, on Rust crate/`External` nodes), `visibility?`, `complexity?`, `cycle_kind?` | `crates/code-split-graph/src/graph.rs` |
+| Edge | `from`, `to`, `kind`, `external?`, `visibility?` | `crates/code-split-graph/src/graph.rs` |
+| NodeKind | Enum. Output kinds: `File` (a project source file), `External` (a 3rd-party library at depth 1). The variants `Crate`, `Module`, `Trait` are internal-only — used by `code-split-plugin-rust` while building the Rust module tree and collapsed into `File`/`External` by the Rust plugin before serialization; they never appear in a snapshot. | `crates/code-split-graph/src/graph.rs` |
+| EdgeKind | Enum. Output kinds: `Uses`, `Reexports` (both between files; `Uses` to an `External` node when the edge is flagged `external`), and `Contains`. A `Contains` edge records a Rust `mod foo;` declaration (parent file → child file): it is **kept in the JSON snapshot as structural ownership metadata**, but consumers treat it as ownership rather than information flow — it is not drawn on the main map and is excluded from fan_in / HK / cycle detection. Self-edges and cross-crate `Contains` are dropped during the collapse; only cross-file parent→child `Contains` survive. | `crates/code-split-graph/src/graph.rs` |
+| CycleKind | Enum: `TestEmbed` (Rust `#[cfg(test)]` back-edge), `Mutual` (SCC size 2), `Chain` (SCC size ≥ 3). Set on each node in a cycle via `cycle_kind`. | `crates/code-split-graph/src/graph.rs` |
+| CycleGroup | SCC with ≥ 2 nodes: `kind: CycleKind`, `nodes: Vec<NodeId>`. Stored in `Graph.cycles`. | `crates/code-split-graph/src/graph.rs` |
+| NodeId | Stable string key with no line numbers or byte offsets. Schemes: `file:{path}` for a source file, `ext:{name}` for an external library. | `crates/code-split-graph/src/graph.rs`, `crates/code-split-graph/src/snapshot.rs` |
+| Complexity | Nested code-metrics object on a node. Top-level scalars: `cyclomatic`, `cognitive`, `exits`, `args`, `functions`, `closures` (zero-valued fields omitted). Sub-objects: `coupling?` (`fan_in`, `fan_out`, `fan_out_external`, `hk` — omitted when all fan values are 0), `maintainability?` (`mi`, `mi_sei`), `loc?` (`source`, `logical`, `comments`, `blank`), `halstead?` (`length`, `vocabulary`, `volume`, `effort`, `time`, `bugs`). Entire `complexity` object omitted when all sub-fields are zero/absent. Present on `File` nodes; absent on `External` nodes. All numeric fields use 3-significant-digit truncation; whole numbers serialized without decimal point. | `crates/code-split-graph/src/graph.rs` |
+| Coupling | `fan_in`, `fan_out` (internal file→file counts), `fan_out_external` (distinct external libraries depended on), `hk` (Henry-Kafura from internal counts only). | `crates/code-split-graph/src/graph.rs` |
+| AvgCoupling | Average coupling stored inside `GraphStats`: `fan_in`, `fan_out`, `hk` (all f64, zero-valued fields omitted). | `crates/code-split-graph/src/graph.rs` |
+| GraphStats | Optional summary attached to the `files` graph after all annotations. Mirrors the `Complexity` node structure with averages: top-level `cyclomatic`, `cognitive`; sub-objects `coupling?` (`AvgCoupling`), `maintainability?`, `loc?`, `halstead?`. Zero-valued scalar fields and absent sub-objects are omitted. Percentiles are not stored — the viewer computes them client-side from raw node data. Populated by `annotate_stats()` in `code-split-graph`. | `crates/code-split-graph/src/graph.rs`, `crates/code-split-graph/src/stats.rs` |
+| Snapshot | A single `.json` file combining `workspace` (cwd), `target` (analyzed project), `plugin`, `config_file?` (path of loaded config file, omitted when none), `roots` (named path prefixes; pruned to only those actually used to shorten a node path, so e.g. a JS/TS/Python snapshot carries no Rust toolchain roots), `versions`, `git`, `timings`, and a `graphs` object with a single key: `files`. Serialized via `to_canonical_string_pretty` — **canonical JSON**: every object key alphabetical, `nodes`/`edges` arrays sorted by stable key — so unchanged code re-serializes byte-for-byte (no `HashMap`-order churn). | `crates/code-split-graph/src/snapshot.rs` |
+| StageTime | Per-stage timing entry: `stage` (name), `ms` (elapsed milliseconds), `detail` (human summary). Stored in `Snapshot.timings` in execution order. | `crates/code-split-graph/src/snapshot.rs` |
+| CompareSummary | Computed from two `Snapshot`s (baseline, current) by `compare_snapshots`: added/removed/affected/unchanged counts for nodes and edges on the `files` graph, plus cycle/SCC counts per side. Drives the `check --baseline` regression gate. | `crates/code-split-graph/src/diff.rs` |
 
 **Relationships**:
 
@@ -233,7 +241,7 @@ in `crates/code-split-core/schemas/graph.schema.json`.
 
 ### 3.2 Component Model
 
-#### code-split-core
+#### code-split-graph
 
 - [x] `p1` - **ID**: `cpt-code-split-component-core`
 
@@ -272,12 +280,17 @@ Modules beyond graph types:
   and sorts the `nodes`/`edges` arrays by a stable key. This guarantees a
   deterministic, byte-stable snapshot for unchanged input.
 
-#### code-split-syn
+#### code-split-plugin-rust
 
 - [x] `p1` - **ID**: `cpt-code-split-component-syn`
 
-Produces the Rust module graph via syntactic analysis. Calls
-`cargo metadata`; classifies crates as local vs. external; walks local
+The Rust language plugin (`pub fn run`), dispatched by `code-split-cli`. It
+produces the Rust module graph via syntactic analysis, annotates complexity
+through the shared `code-split-plugin` crate (passing a `RustParser`), and
+collapses the module graph to a file graph (see §3.7) before returning. Calls
+`cargo metadata` **with `--offline`** (code-split never hits the network — it
+resolves from the warm cargo cache, surfacing an actionable error otherwise);
+classifies crates as local vs. external; walks local
 source trees with `syn` to extract the module hierarchy and `use` /
 `pub use` statements, emitting `Crate` / `Module` / `Trait` nodes and
 `Contains` / `Uses` / `Reexports` edges. It also runs a `syn::visit`
@@ -311,11 +324,16 @@ expanded). A file reached only via `Contains` (e.g. a module declared with
 `mod foo;` but never referenced by path or `use`) has `fan_in` 0 and can
 appear isolated on the map.
 
-#### code-split-complexity
+#### code-split-plugin
 
 - [x] `p1` - **ID**: `cpt-code-split-component-complexity`
 
-Annotates `File` nodes (Rust file-backed module nodes before collapse,
+The shared, **language-agnostic** layer every language plugin builds on. It
+holds the complexity engine, the file-graph `finalize` pass, and timing/logging
+helpers. It knows nothing about any specific language: the caller (a language
+plugin) supplies the file extensions and a parser callback.
+
+The complexity engine annotates `File` nodes (Rust file-backed module nodes before collapse,
 and the `File` nodes of the Python/JS/TS plugins) in the `GraphBuilder`
 with per-file code complexity metrics. Uses `rust-code-analysis`
 (Mozilla, via the `ffedoroff/rust-code-analysis` fork on branch
@@ -324,12 +342,14 @@ supports Rust, C++, JavaScript, Python, TypeScript, Kotlin, and more.
 Metrics are aggregated to the whole file (the root `FuncSpace` of each
 parsed file).
 
-**Interface**:
-- `code_split_complexity::analyze(workspace, builder)` — Rust (`.rs` files)
-- `code_split_complexity::analyze_python(workspace, builder)` — Python (`.py`)
-- `code_split_complexity::analyze_js(workspace, builder)` — JS/TS (`.js`, `.jsx`, `.ts`, `.tsx`)
-
-All three delegate to a shared `analyze_extensions` implementation.
+**Interface**: a single generic entry point —
+`code_split_plugin::complexity::annotate(root, builder, extensions, parse)` —
+where `parse: Fn(&Path, Vec<u8>) -> Option<FuncSpace>` is supplied by the
+calling plugin. Each language plugin passes its own extensions and parser:
+`code-split-plugin-rust` → `["rs"]` + `RustParser`; `code-split-plugin-python`
+→ `["py"]` + `PythonParser`; `code-split-plugin-javascript` →
+`["js","jsx","ts","tsx"]` + the matching JS/TS/Tsx parser. No language names or
+extension `match`es live in this crate.
 
 **Matching strategy**: each file's metrics come from the top-level
 `FuncSpace` (`SpaceKind::Unit`) of the parsed file, matched to the graph
@@ -354,11 +374,11 @@ construction. Metrics are whole-file aggregates, so all functions,
 methods, arrow functions, and closures in a file roll up into that
 file's single node — there is no per-function granularity to miss.
 
-#### plugin::python (built-in)
+#### code-split-plugin-python (built-in)
 
 - [x] `p3` - **ID**: `cpt-code-split-component-python-plugin`
 
-In-process Python plugin implemented in `code-split-cli/src/plugin/python.rs`.
+In-process Python plugin implemented in `code-split-plugin-python/src/lib.rs`.
 Uses `tree-sitter-python` (already a transitive dep via `rust-code-analysis`)
 for AST traversal and `walkdir` for file discovery.
 
@@ -389,15 +409,15 @@ for AST traversal and `walkdir` for file discovery.
 `_name` → `Restricted { path: "module" }`; otherwise → `Public`.
 
 **Complexity**: per-file metrics annotated via
-`code_split_complexity::analyze_python` (whole-file aggregate; see §3.2
-`code-split-complexity`).
+`code_split_plugin::complexity::annotate` with `["py"]` + `PythonParser`
+(whole-file aggregate; see §3.2 `code-split-plugin`).
 
-#### plugin::javascript (built-in)
+#### code-split-plugin-javascript (built-in)
 
 - [x] `p3` - **ID**: `cpt-code-split-component-js-plugin`
 
 In-process JavaScript / TypeScript plugin implemented in
-`code-split-cli/src/plugin/javascript.rs`. Uses `tree-sitter-javascript` and
+`code-split-plugin-javascript/src/lib.rs`. Uses `tree-sitter-javascript` and
 `tree-sitter-typescript` for AST traversal and `walkdir` for file discovery.
 
 **Source root detection**: if `src/` exists in the workspace, scans from
@@ -429,9 +449,9 @@ follow the `src/` layout convention.
 **Visibility heuristic**: `_name` → `Private`; otherwise → `Public`.
 
 **Complexity**: per-file metrics annotated via
-`code_split_complexity::analyze_js` (whole-file aggregate, covering all
-functions, arrow functions, and methods in the file; see §3.2
-`code-split-complexity`).
+`code_split_plugin::complexity::annotate` with `["js","jsx","ts","tsx"]` + the
+matching JS/TS/Tsx parser (whole-file aggregate, covering all functions, arrow
+functions, and methods in the file; see §3.2 `code-split-plugin`).
 
 #### code-split-cli
 
@@ -451,7 +471,7 @@ config (`config.rs` — code-split.toml / Cargo.toml metadata / CLI flags);
 resolves the plugin name (CLI `--plugin` → config `plugin` → marker
 auto-detect, all under `auto`); invokes the selected built-in plugin
 (`rust` / `python` / `javascript`) in-process. After the plugin run it calls
-`relativize_graphs` + `rewrite_ids` from `code-split-core`, then applies
+`relativize_graphs` + `rewrite_ids` from `code-split-graph`, then applies
 config filters: `config::apply_ignore` (path globs + `tests` /
 `test_modules` test-file stripping + `dev_only_crates` via
 `cargo metadata`), `annotate_all_cycles` + `config::apply_cycle_rules`,
@@ -508,7 +528,7 @@ config filters: `config::apply_ignore` (path globs + `tests` /
   › `[output.<fmt>] path` config › built-in default**
   (`DEFAULT_JSON_PATH` / `DEFAULT_HTML_PATH` = `.code-split/{ts}-{git-hash-3}.{json,html}`).
   The HTML viewer template and all assets (CSS, JS) are embedded in the binary
-  via `include_str!` from `crates/code-split-cli/src/assets/`, and the snapshot
+  via `include_str!` from `crates/code-split-viewer/src/assets/`, and the snapshot
   data is embedded inline in the same file as `cs-baseline` / `cs-current` JSON
   `<script>` tags (`render_html_viewer`). With `--baseline <snapshot>` the HTML
   becomes a diff view (current = this run, baseline = the file) plus a verdict,
@@ -524,7 +544,7 @@ config filters: `config::apply_ignore` (path globs + `tests` /
 rendering, no rules. Its sole job is argument parsing, plugin
 dispatch, and artifact I/O routing.
 
-#### HTML assets (`crates/code-split-cli/src/assets/`)
+#### HTML assets (`crates/code-split-viewer/src/assets/`)
 
 - [x] `p1` - **ID**: `cpt-code-split-component-html-assets`
 
@@ -613,7 +633,7 @@ See [§3.7 Plugin System](#37-plugin-system).
 #### Graph JSON Schema (`cpt-code-split-interface-graph-schema`)
 
 - **Location**: defined by `Snapshot`, `Node`, `Edge` structs in
-  `crates/code-split-core/src/`
+  `crates/code-split-graph/src/`
 - **Versioning**: `schema_version: "1"`; additive fields are minor;
   breaking changes require a major-version bump
 
@@ -621,24 +641,28 @@ See [§3.7 Plugin System](#37-plugin-system).
 
 | Consumer | Dependency | Interface |
 |----------|------------|-----------|
-| `code-split-cli` | `code-split-syn` | `analyze(workspace, &mut GraphBuilder)` |
-| `code-split-cli` | `code-split-complexity` | `analyze(workspace, &mut GraphBuilder) -> Result<usize>` |
-| `code-split-cli` | `code-split-core` | `GraphBuilder`, `compare_snapshots()`, `serde_json` serialization |
-| `code-split-syn` | `code-split-core` | `GraphBuilder` write API |
-| `code-split-complexity` | `code-split-core` | `GraphBuilder` read+write API, `Complexity` struct |
-| `code-split-cli` (`run_report`) | the analyzed snapshot (+ optional `--baseline`) | top-level metadata + `graphs` object; rendered via `render_html_viewer` |
+| `code-split-cli` | `code-split-plugin-{rust,python,javascript}` | `run(workspace) -> (PluginGraphs, Vec<StageTime>)` |
+| `code-split-cli` | `code-split-viewer` | `render_html_viewer()`, `extract_embedded_snapshot()` |
+| `code-split-cli` | `code-split-graph` | `GraphBuilder`, `compare_snapshots()`, `serde_json` serialization |
+| `code-split-plugin-{rust,python,javascript}` | `code-split-plugin` | `complexity::annotate()`, `finalize::*`, `logger` |
+| `code-split-plugin-{rust,python,javascript}` | `code-split-graph` | `GraphBuilder` write API |
+| `code-split-plugin` | `code-split-graph` | `GraphBuilder` read+write API, `Complexity` struct |
+| `code-split-viewer` | `code-split-graph` | `Snapshot`, `to_canonical_string` |
+| `code-split-cli` (`run_report`) | the analyzed snapshot (+ optional `--baseline`) | top-level metadata + `graphs` object; rendered via `code-split-viewer` |
 | `code-split-cli` (`run_check`) | the analyzed snapshot (+ optional `--baseline`) | `graphs` object; `compare_snapshots` / violation diff for the relative gate |
 
 **Rules**:
 
-- No circular dependencies among the four Rust crates.
-- Only `code-split-syn` may depend on `cargo_metadata` and `syn`.
-- Only `code-split-complexity` may depend on `rust-code-analysis`.
-- `code-split-core` has zero I/O and zero analyzer dependencies.
+- No circular dependencies among the seven Rust crates.
+- Only `code-split-plugin-rust` may depend on `cargo_metadata` and `syn`.
+- Only `code-split-plugin` may depend on `rust-code-analysis`.
+- Language-specific code/names live **only** in the `code-split-plugin-*` crates;
+  `code-split-plugin` and `code-split-graph` are language-agnostic.
+- `code-split-graph` has zero I/O and zero analyzer dependencies.
 - The Rust plugin's module→file collapse lives in
-  `code-split-cli/src/plugin/rust.rs`, downstream of `code-split-syn`.
-- `code-split-cli` reads JSON artifacts from disk; no in-process coupling
-  between the analysis crates and the report rendering code.
+  `code-split-plugin-rust/src/lib.rs`.
+- `code-split-cli` orchestrates: it dispatches the language plugins and hands the
+  snapshot to `code-split-viewer` for rendering.
 
 ### 3.5 External Dependencies
 
@@ -664,9 +688,9 @@ sequenceDiagram
     participant CLI as code-split report
     participant Disc as Plugin Resolver (§3.7)
     participant Plugin as Built-in Rust Plugin
-    participant Syn as code-split-syn
-    participant Cx as code-split-complexity
-    participant Core as code-split-core::GraphBuilder
+    participant Syn as code-split-plugin-rust
+    participant Cx as code-split-plugin (complexity)
+    participant Core as code-split-graph::GraphBuilder
     participant FS as Filesystem
 
     User ->> CLI: code-split report . --plugin rust --output.json
@@ -878,10 +902,10 @@ or `https://…` is normalized to a web blob URL — GitLab `/-/blob/`, GitHub
 
 At P1 the only built-in plugin is `rust`. It is compiled directly into
 the `code-split` binary and invoked in-process, so no sub-process overhead
-is incurred. Its internal structure is the `code-split-syn` crate plus a
-module→file collapse pass in `code-split-cli/src/plugin/rust.rs`; it is
-not a separate binary on disk. There is no rust-analyzer dependency, so
-the run completes in seconds.
+is incurred. Its internal structure is the `code-split-plugin-rust` crate
+(cargo metadata + `syn`), which also collapses the module graph to a file
+graph; it is not a separate binary on disk. There is no rust-analyzer
+dependency, so the run completes in seconds.
 
 ##### Analysis Modes and Prerequisites
 
@@ -890,11 +914,13 @@ The Rust plugin has two modes selected by flags on the analyzing commands
 
 | Mode | Flag | `cargo` required | Network / registry | External nodes |
 |------|------|------------------|--------------------|----------------|
-| Full | *(none)* | yes | yes (or cached) | yes |
+| Full | *(none)* | yes | no — `cargo metadata --offline`, cache-only | yes |
 
-The project does NOT need to compile in any mode — `syn` parses source
-syntactically and tolerates errors. Only dependency resolution
-(`cargo metadata`) is required for full mode.
+The project does NOT need to compile — `syn` parses source syntactically and
+tolerates errors. Only dependency resolution (`cargo metadata`, run with
+`--offline`) is required; it reads from the already-warm cargo cache, so
+code-split makes no network calls. If the cache isn't populated, the plugin
+emits an actionable error telling you to warm it (e.g. `cargo fetch`).
 
 ##### Full Mode — Step-by-Step
 
@@ -907,8 +933,8 @@ code-split report /path/to/my-crate --plugin rust
    as needed when the artifacts are written.
 2. Collects git state (`branch`, `commit`, `dirty_files`) from
    `/path/to/my-crate`.
-3. Invokes `code-split-syn::analyze`:
-   a. Runs `cargo metadata --format-version=1` inside the workspace.
+3. Runs the syntactic stage (`code-split-plugin-rust`):
+   a. Runs `cargo metadata --offline --format-version=1` inside the workspace.
    b. Identifies all local packages (those with a `path` source).
    c. For each local package, locates the crate root (`lib.rs` /
       `main.rs` / `[lib] path`).
@@ -918,13 +944,13 @@ code-split report /path/to/my-crate --plugin rust
       `Reexports` edges into `GraphBuilder`.
    f. External crates are added as opaque `Crate` nodes with
       `external = true`; their source is never read.
-4. Invokes `code-split-complexity::analyze`:
+4. Annotates complexity (`code-split-plugin`, with a `RustParser`):
    a. Walks all `.rs` files in the workspace with `walkdir`.
    b. For each file, parses it with `rust-code-analysis` to obtain a
       `FuncSpace` tree.
    c. Annotates each file-backed `Module` node with whole-file metrics
       from the root space (matched by canonical path).
-5. Collapses the module graph to a **file graph** (in `plugin/rust.rs`):
+5. Collapses the module graph to a **file graph** (in `code-split-plugin-rust`):
    a. Every `.rs` file becomes one `File` node (`file:<path>`); inline
       `mod {}` modules fold into their containing file.
    b. `Uses` / `Reexports` / `Contains` edges are re-pointed from module
@@ -1103,10 +1129,13 @@ open .code-split/my-crate-20260522-112233-diff.html   # --baseline names it -dif
 ```
 code-split/
   crates/
-    code-split-core/          # Rust — graph types, JSON schema, StageTime, cycles/hk/diff
-    code-split-syn/           # Rust — syntactic analysis (module tree)
-    code-split-complexity/    # Rust — per-file complexity metrics (rust-code-analysis)
-    code-split-cli/           # Rust — orchestrator, module→file collapse, check linter, report/viewer renderer
+    code-split-graph/             # Rust — graph types, JSON schema, StageTime, cycles/hk/diff
+    code-split-plugin/            # Rust — shared plugin layer: complexity, finalize, logging
+    code-split-plugin-rust/       # Rust — Rust analysis: cargo metadata + syn, module→file collapse
+    code-split-plugin-python/     # Rust — Python analysis: tree-sitter
+    code-split-plugin-javascript/ # Rust — JS/TS analysis: tree-sitter
+    code-split-viewer/            # Rust — HTML viewer: assets + render_html_viewer
+    code-split-cli/               # Rust — orchestrator, plugin dispatch, check linter, report
       src/
         plugin/            # Built-in plugins: rust.rs (incl. module→file collapse), python.rs, javascript.rs, finalize.rs (file-graph normalizer for Python/JS), mod.rs
         assets/            # HTML/CSS/JS assets embedded via include_str!
@@ -1156,13 +1185,13 @@ require rust-analyzer (slow, volatile), which has been removed.
 (single-snapshot or `--baseline` diff) are embedded into the binary via
 `include_str!`. The
 Graphviz WASM bundle is committed under
-`crates/code-split-cli/src/assets/` and never fetched at runtime.
+`crates/code-split-viewer/src/assets/` and never fetched at runtime.
 Generated HTML files work offline via `file://` with no network access.
 
 ## 5. Traceability
 
 - **PRD**: [PRD.md](PRD.md)
-- **Graph JSON Schema**: `crates/code-split-core/schemas/graph.schema.json`
+- **Graph JSON Schema**: `crates/code-split-graph/schemas/graph.schema.json`
 - **ADRs**: pending — `docs/ADR/0001-files-only-graph.md` and
   `docs/ADR/0002-four-step-pipeline.md` to be authored after this
   design is accepted

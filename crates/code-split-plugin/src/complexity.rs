@@ -2,37 +2,28 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use anyhow::Result;
-use code_split_core::{Complexity, GraphBuilder, Halstead, Loc, Maintainability, NodeKind};
-use rust_code_analysis::{
-    FuncSpace, JavascriptParser, ParserTrait, PythonParser, RustParser, TsxParser,
-    TypescriptParser, metrics,
-};
+use code_split_graph::{Complexity, GraphBuilder, Halstead, Loc, Maintainability, NodeKind};
+use rust_code_analysis::FuncSpace;
 use walkdir::WalkDir;
 
-/// Walk all source files under `root` whose extension is in `extensions`,
-/// compute complexity metrics via rust-code-analysis, and annotate the
-/// file-level nodes in the graph (`File` nodes, and — before the Rust
-/// module→file collapse — file-backed `Module` nodes with `line == None`).
-/// Returns the number of nodes annotated.
-pub fn analyze(root: &Path, builder: &mut GraphBuilder) -> Result<usize> {
-    analyze_extensions(root, builder, &["rs"])
-}
-
-/// Same as `analyze` but for Python source files.
-pub fn analyze_python(root: &Path, builder: &mut GraphBuilder) -> Result<usize> {
-    analyze_extensions(root, builder, &["py"])
-}
-
-/// Same as `analyze` but for JavaScript / TypeScript source files.
-pub fn analyze_js(root: &Path, builder: &mut GraphBuilder) -> Result<usize> {
-    analyze_extensions(root, builder, &["js", "jsx", "ts", "tsx"])
-}
-
-fn analyze_extensions(
+/// Walk all source files under `root` whose extension is in `extensions`, parse
+/// each with the caller-supplied `parse` callback, compute complexity metrics
+/// via rust-code-analysis, and annotate the file-level nodes in the graph
+/// (`File` nodes, and — before the Rust module→file collapse — file-backed
+/// `Module` nodes with `line == None`). Returns the number of nodes annotated.
+///
+/// This stage is language-agnostic: it knows nothing about specific languages.
+/// The caller (a language plugin) supplies both the file `extensions` to scan
+/// and the `parse` function that turns a source file into a `FuncSpace`.
+pub fn annotate<F>(
     root: &Path,
     builder: &mut GraphBuilder,
     extensions: &[&str],
-) -> Result<usize> {
+    parse: F,
+) -> Result<usize>
+where
+    F: Fn(&Path, Vec<u8>) -> Option<FuncSpace>,
+{
     let mut file_index: HashMap<String, usize> = HashMap::new();
 
     for (i, node) in builder.nodes().iter().enumerate() {
@@ -70,7 +61,7 @@ fn analyze_extensions(
         };
         let canonical = path.to_string_lossy().into_owned();
 
-        let Some(space) = parse_metrics(path, src) else {
+        let Some(space) = parse(path, src) else {
             continue;
         };
 
@@ -81,17 +72,6 @@ fn analyze_extensions(
     }
 
     Ok(annotated)
-}
-
-fn parse_metrics(path: &Path, src: Vec<u8>) -> Option<FuncSpace> {
-    match path.extension().and_then(|e| e.to_str()) {
-        Some("rs") => metrics(&RustParser::new(src, path, None), path),
-        Some("py") => metrics(&PythonParser::new(src, path, None), path),
-        Some("js") | Some("jsx") => metrics(&JavascriptParser::new(src, path, None), path),
-        Some("ts") => metrics(&TypescriptParser::new(src, path, None), path),
-        Some("tsx") => metrics(&TsxParser::new(src, path, None), path),
-        _ => None,
-    }
 }
 
 fn complexity_from(s: &FuncSpace) -> Complexity {

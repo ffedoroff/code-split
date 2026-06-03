@@ -1,5 +1,5 @@
 [package]
-name = "code-split-core"
+name = "code-split-graph"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

@@ -219,35 +219,23 @@ dependencies = [
  "anyhow",
  "chrono",
  "clap",
- "code-split-complexity",
- "code-split-core",
- "code-split-syn",
+ "code-split-graph",
+ "code-split-plugin",
+ "code-split-plugin-javascript",
+ "code-split-plugin-python",
+ "code-split-plugin-rust",
+ "code-split-viewer",
  "globset",
  "serde",
  "serde_json",
  "tempfile",
  "toml",
- "tree-sitter",
- "tree-sitter-javascript",
- "tree-sitter-python",
- "tree-sitter-typescript",
  "walkdir",
  "which",
 ]
 
 [[package]]
-name = "code-split-complexity"
-version = "1.0.0-alpha.3"
-dependencies = [
- "anyhow",
- "code-split-core",
- "rust-code-analysis-code-split",
- "syn",
- "walkdir",
-]
-
-[[package]]
-name = "code-split-core"
+name = "code-split-graph"
 version = "1.0.0-alpha.3"
 dependencies = [
  "chrono",
@@ -257,15 +245,67 @@ dependencies = [
 ]
 
 [[package]]
-name = "code-split-syn"
+name = "code-split-plugin"
+version = "1.0.0-alpha.3"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "code-split-graph",
+ "rust-code-analysis-code-split",
+ "walkdir",
+]
+
+[[package]]
+name = "code-split-plugin-javascript"
+version = "1.0.0-alpha.3"
+dependencies = [
+ "anyhow",
+ "code-split-graph",
+ "code-split-plugin",
+ "rust-code-analysis-code-split",
+ "tempfile",
+ "tree-sitter",
+ "tree-sitter-javascript",
+ "tree-sitter-typescript",
+ "walkdir",
+]
+
+[[package]]
+name = "code-split-plugin-python"
+version = "1.0.0-alpha.3"
+dependencies = [
+ "anyhow",
+ "code-split-graph",
+ "code-split-plugin",
+ "rust-code-analysis-code-split",
+ "tempfile",
+ "tree-sitter",
+ "tree-sitter-python",
+ "walkdir",
+]
+
+[[package]]
+name = "code-split-plugin-rust"
 version = "1.0.0-alpha.3"
 dependencies = [
  "anyhow",
  "cargo_metadata",
- "code-split-core",
+ "code-split-graph",
+ "code-split-plugin",
  "proc-macro2",
+ "rust-code-analysis-code-split",
  "syn",
- "walkdir",
+ "which",
+]
+
+[[package]]
+name = "code-split-viewer"
+version = "1.0.0-alpha.3"
+dependencies = [
+ "anyhow",
+ "code-split-graph",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]

@@ -1,14 +1,15 @@
 use anyhow::Result;
-use code_split_core::{
+use code_split_graph::{
     GraphBuilder, NodeKind, PluginGraphs, StageTime,
     graph::{Edge, EdgeKind, Node, Visibility},
 };
+use rust_code_analysis::{JavascriptParser, ParserTrait, TsxParser, TypescriptParser, metrics};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
-use crate::logger;
-use crate::plugin::finalize::finalize_file_graph;
+use code_split_plugin::finalize::finalize_file_graph;
+use code_split_plugin::logger;
 
 pub fn run(workspace: &Path) -> Result<(PluginGraphs, Vec<StageTime>)> {
     let mut timings = Vec::new();
@@ -36,7 +37,17 @@ pub fn run(workspace: &Path) -> Result<(PluginGraphs, Vec<StageTime>)> {
 
     {
         let t = logger::Timer::start("complexity: cyclomatic / cognitive / halstead / MI / LOC");
-        let annotated = match code_split_complexity::analyze_js(&source_root, &mut builder) {
+        let annotated = match code_split_plugin::complexity::annotate(
+            &source_root,
+            &mut builder,
+            &["js", "jsx", "ts", "tsx"],
+            |path, src| match path.extension().and_then(|e| e.to_str()) {
+                Some("ts") => metrics(&TypescriptParser::new(src, path, None), path),
+                Some("tsx") => metrics(&TsxParser::new(src, path, None), path),
+                // js, jsx
+                _ => metrics(&JavascriptParser::new(src, path, None), path),
+            },
+        ) {
             Ok(n) => n,
             Err(e) => {
                 logger::info(&format!("complexity skipped: {e:#}"));
@@ -428,7 +439,7 @@ fn normalize_path(path: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use code_split_core::graph::Graph;
+    use code_split_graph::graph::Graph;
     use std::fs;
     use tempfile::TempDir;
 

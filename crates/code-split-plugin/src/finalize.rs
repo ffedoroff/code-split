@@ -1,4 +1,4 @@
-use code_split_core::{Graph, NodeKind};
+use code_split_graph::{Graph, NodeKind};
 use std::collections::HashSet;
 
 /// Normalize a directly-built file graph (Python / JS plugins): drop any
@@ -7,7 +7,7 @@ use std::collections::HashSet;
 /// kind)`, prune unreferenced `External` nodes, and sort for deterministic
 /// output.
 pub fn finalize_file_graph(mut graph: Graph) -> Graph {
-    use code_split_core::EdgeKind;
+    use code_split_graph::EdgeKind;
 
     let external_ids: HashSet<String> = graph
         .nodes

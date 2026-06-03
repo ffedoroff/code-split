@@ -1,4 +1,4 @@
-use code_split_core::GitInfo;
+use code_split_graph::GitInfo;
 use std::path::Path;
 use std::process::Command;
 

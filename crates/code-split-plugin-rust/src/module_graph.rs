@@ -1,7 +1,7 @@
-use crate::ids::crate_node_id;
+use super::ids::crate_node_id;
 use anyhow::{Context, Result};
 use cargo_metadata::{Metadata, Package, PackageId, Target};
-use code_split_core::{Edge, EdgeKind, GraphBuilder, Node, NodeId, NodeKind, Visibility};
+use code_split_graph::{Edge, EdgeKind, GraphBuilder, Node, NodeId, NodeKind, Visibility};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use syn::spanned::Spanned as _;
@@ -24,7 +24,7 @@ pub(crate) fn contribute(metadata: &Metadata, builder: &mut GraphBuilder) -> Res
 /// Sum module LOC into each crate node.
 /// File nodes no longer exist in the Rust plugin — LOC lives on Module nodes.
 fn aggregate_crate_loc(builder: &mut GraphBuilder) {
-    use code_split_core::NodeKind;
+    use code_split_graph::NodeKind;
     // Collect (crate_id, loc) from root-level module nodes (depth == 1 below crate).
     // Root module ids have the form "mod:{pkg_repr}::{target_name}" (no further "::" segments
     // in the path part), and their parent is "crate:{pkg_repr}".
@@ -154,7 +154,7 @@ struct PendingUse {
 
 /// Collects every qualified path (`a::b::…`, ≥ 2 segments) in a parsed file,
 /// as its full segment list. Used to surface bare-path references that never
-/// appear in a `use` — both cross-crate (`code_split_core::…`, `once_cell::…`)
+/// appear in a `use` — both cross-crate (`code_split_graph::…`, `once_cell::…`)
 /// and intra-crate (`commands::run()`, `crate::foo::Bar`). Resolution against
 /// the module index / extern crates happens later in `emit_uses`.
 #[derive(Default)]

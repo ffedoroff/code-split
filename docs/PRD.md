@@ -456,8 +456,8 @@ workspaces. The plugin MUST:
   rust-analyzer / `ra_ap_*` dependency); analysis runs in seconds
 - Compute per-file code complexity metrics (cyclomatic, cognitive,
   Halstead, maintainability index, LOC variants, functions, closures,
-  nexits, nargs) for each `File` node via `code-split-complexity`;
-  metrics are stored in the `complexity` field of the node and
+  nexits, nargs) for each `File` node via the shared `code-split-plugin`
+  complexity engine; metrics are stored in the `complexity` field of the node and
   serialized into the snapshot
 - Detect dependency cycles (Kosaraju SCC) in the file graph; annotate
   each node in a cycle with `cycle_kind` (`TestEmbed` | `Mutual` |
@@ -469,9 +469,9 @@ workspaces. The plugin MUST:
   and counted in `fan_out_external` instead
 
 **Rationale**: Rust is the primary use-case for the initial release.
-The `code-split-syn` analysis crate plus the module→file collapse pass
-in `code-split-cli` implement this plugin. Removing rust-analyzer makes
-the Rust path fast and the binary light.
+The `code-split-plugin-rust` crate (cargo metadata + `syn`, including the
+module→file collapse pass) implements this plugin. Removing rust-analyzer
+makes the Rust path fast and the binary light.
 
 **Actors**: `cpt-code-split-actor-developer`
 
@@ -541,8 +541,8 @@ at the package file), and imports that do not resolve to a project file
 become `External` library nodes (`ext:<top-level-package>`, e.g.
 `numpy`) reached by a `uses` edge flagged `external: true`. Per-file
 complexity metrics (cyclomatic, cognitive, Halstead, MI, LOC, functions,
-nexits, nargs) are annotated on each `File` node via
-`code-split-complexity` using `rust-code-analysis`'s `PythonParser`.
+nexits, nargs) are annotated on each `File` node via the shared
+`code-split-plugin` complexity engine using `rust-code-analysis`'s `PythonParser`.
 
 **JavaScript / TypeScript plugin** (`--plugin javascript`) is shipped as a
 built-in in `code-split-cli`; one plugin handles `.js`, `.jsx`, `.ts`, and

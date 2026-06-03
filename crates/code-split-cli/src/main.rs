@@ -1,11 +1,11 @@
 mod config;
 mod git;
-mod logger;
+use code_split_plugin::logger;
 mod plugin;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
-use code_split_core::Snapshot;
+use code_split_graph::Snapshot;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
@@ -303,8 +303,8 @@ fn analyze_directory(
 
     let mut roots = detect_roots();
     roots.insert("target".to_string(), target.display().to_string());
-    code_split_core::relativize_graphs(&mut plugin_graphs, &target, &roots);
-    code_split_core::rewrite_ids(&mut plugin_graphs, &target, &roots);
+    code_split_graph::relativize_graphs(&mut plugin_graphs, &target, &roots);
+    code_split_graph::rewrite_ids(&mut plugin_graphs, &target, &roots);
     // Drop roots that did not shorten any path — e.g. the Rust `cargo`/`rustup`/
     // `registry` roots are irrelevant to a JS/TS/Python project and would
     // otherwise leak machine-specific paths into the snapshot header.
@@ -312,10 +312,10 @@ fn analyze_directory(
 
     config::apply_ignore(&mut plugin_graphs, &cfg.ignore, &target)?;
 
-    code_split_core::annotate_all_cycles(&mut plugin_graphs);
+    code_split_graph::annotate_all_cycles(&mut plugin_graphs);
     config::apply_cycle_rules(&mut plugin_graphs, &cfg.rules.cycles);
-    code_split_core::annotate_hk(&mut plugin_graphs);
-    code_split_core::annotate_stats(&mut plugin_graphs.files);
+    code_split_graph::annotate_hk(&mut plugin_graphs);
+    code_split_graph::annotate_stats(&mut plugin_graphs.files);
 
     let violations = config::check_violations(&plugin_graphs, &cfg.rules);
 
@@ -331,7 +331,7 @@ fn analyze_directory(
             "code_split_plugin_rust".to_string(),
             env!("CARGO_PKG_VERSION").to_string(),
         );
-        if let Some(rv) = plugin::rust::version_string() {
+        if let Some(rv) = code_split_plugin_rust::version_string() {
             versions.insert("rustc".to_string(), rv);
         }
     }
@@ -561,7 +561,7 @@ const METRICS: [&str; 6] = ["cyclomatic", "cognitive", "hk", "fan_in", "fan_out"
 /// Print the current measured values per scope as ready-to-paste `code-split.toml`
 /// threshold blocks: the per-unit worst value (`single`) and the graph-wide
 /// average (`avg`). Lets a user pin today's numbers as a baseline that passes.
-fn print_current_values(graphs: &code_split_core::PluginGraphs, cycles: &config::CycleRules) {
+fn print_current_values(graphs: &code_split_graph::PluginGraphs, cycles: &config::CycleRules) {
     println!();
     println!("Current config — copy the blocks below into code-split.toml:");
 
@@ -575,11 +575,11 @@ fn print_current_values(graphs: &code_split_core::PluginGraphs, cycles: &config:
     for (key, kind, rule) in [
         (
             "test-embed",
-            code_split_core::CycleKind::TestEmbed,
+            code_split_graph::CycleKind::TestEmbed,
             cycles.test_embed,
         ),
-        ("mutual", code_split_core::CycleKind::Mutual, cycles.mutual),
-        ("chain", code_split_core::CycleKind::Chain, cycles.chain),
+        ("mutual", code_split_graph::CycleKind::Mutual, cycles.mutual),
+        ("chain", code_split_graph::CycleKind::Chain, cycles.chain),
     ] {
         if rule.is_off() {
             println!("{key:<12}= false");
@@ -601,7 +601,7 @@ fn print_current_values(graphs: &code_split_core::PluginGraphs, cycles: &config:
 }
 
 /// Emit a `[rules.thresholds.<scope>]` block with the per-file metric maxima.
-fn print_scope_values(scope: &str, graph: &code_split_core::graph::Graph) {
+fn print_scope_values(scope: &str, graph: &code_split_graph::graph::Graph) {
     // Per-file maxima across the graph's nodes.
     let mut max = [0f64; 6];
     let mut any = false;
@@ -753,7 +753,7 @@ fn run_report(
             .or(a.output.json.path.as_deref())
             .unwrap_or(DEFAULT_JSON_PATH);
         let dest = render_name(tpl, &target, commit);
-        let mut json = code_split_core::to_canonical_string_pretty(snap)?;
+        let mut json = code_split_graph::to_canonical_string_pretty(snap)?;
         json.push('\n');
         write_artifact(&dest, &json, "json")?;
     }
@@ -771,7 +771,7 @@ fn run_report(
                 None => format!("{dest}-diff"),
             };
         }
-        let html = render_html_viewer(baseline_snap.as_ref(), Some(snap));
+        let html = code_split_viewer::render_html_viewer(baseline_snap.as_ref(), Some(snap));
         write_artifact(&dest, &html, "html")?;
     }
 
@@ -941,7 +941,10 @@ fn detect_roots() -> HashMap<String, String> {
 /// project even when every node sits directly under it). This keeps the
 /// snapshot header free of roots that are irrelevant to the analyzed language
 /// (e.g. the Rust toolchain roots in a JS/TS/Python snapshot).
-fn prune_unused_roots(graphs: &code_split_core::PluginGraphs, roots: &mut HashMap<String, String>) {
+fn prune_unused_roots(
+    graphs: &code_split_graph::PluginGraphs,
+    roots: &mut HashMap<String, String>,
+) {
     let mut used: HashSet<String> = HashSet::new();
     used.insert("target".to_string());
     for node in &graphs.files.nodes {
@@ -967,135 +970,15 @@ fn load_snapshot_any(path: &Path) -> Result<Snapshot> {
     }
     let text =
         std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-    extract_embedded_snapshot(&text, "cs-current")
-        .or_else(|| extract_embedded_snapshot(&text, "cs-baseline"))
+    code_split_viewer::extract_embedded_snapshot(&text, "cs-current")
+        .or_else(|| code_split_viewer::extract_embedded_snapshot(&text, "cs-baseline"))
         .with_context(|| format!("no embedded snapshot found in {}", path.display()))?
-}
-
-/// Pull the JSON out of `<script type="application/json" id="{id}">…</script>` and parse
-/// it into a `Snapshot`. Returns `None` if the tag is absent or holds `null`.
-fn extract_embedded_snapshot(html: &str, id: &str) -> Option<Result<Snapshot>> {
-    let needle = format!("id=\"{id}\">");
-    let start = html.find(&needle)? + needle.len();
-    let end = start + html[start..].find("</script>")?;
-    let body = html[start..end].trim();
-    if body.is_empty() || body == "null" {
-        return None;
-    }
-    // Undo the `</` → `<\/` escaping applied when embedding.
-    let json = body.replace("<\\/", "</");
-    Some(serde_json::from_str(&json).with_context(|| format!("parsing embedded snapshot `{id}`")))
 }
 
 fn load_snapshot(path: &Path) -> Result<Snapshot> {
     let bytes =
         std::fs::read(path).with_context(|| format!("reading snapshot {}", path.display()))?;
     serde_json::from_slice(&bytes).with_context(|| format!("parsing snapshot {}", path.display()))
-}
-
-// ── Assets embedded at compile time ──────────────────────────────────────────
-const ASSET_CSS: &str = include_str!("assets/index.css");
-const ASSET_GV: &str = include_str!("assets/graphviz.umd.js");
-const ASSET_SNARKDOWN: &str = include_str!("assets/snarkdown.umd.js");
-const ASSET_DIFF: &str = include_str!("assets/diff.js");
-const ASSET_LAYOUT: &str = include_str!("assets/layout.js");
-const ASSET_UTILS: &str = include_str!("assets/utils.js");
-const ASSET_MODAL: &str = include_str!("assets/modal.js");
-const ASSET_PANZOOM: &str = include_str!("assets/panzoom.js");
-const ASSET_DIAGRAM: &str = include_str!("assets/diagram.js");
-const ASSET_UI: &str = include_str!("assets/ui.js");
-const ASSET_SUMMARY: &str = include_str!("assets/summary.js");
-const ASSET_EXPORT_POPUP: &str = include_str!("assets/export-popup.js");
-const ASSET_NODE_TABLE: &str = include_str!("assets/node-table.js");
-const ASSET_NAV: &str = include_str!("assets/nav.js");
-const ASSET_APP: &str = include_str!("assets/app.js");
-const ASSET_HTML: &str = include_str!("assets/index.html");
-
-/// Render a self-contained viewer with the snapshot data embedded inline. The snapshots
-/// are stored in `<script type="application/json">` tags (`cs-baseline` / `cs-current`) so
-/// they can be both read by the viewer and extracted from the HTML later (see
-/// [`load_snapshot_any`]). `current` only → review; both → diff.
-fn render_html_viewer(baseline: Option<&Snapshot>, current: Option<&Snapshot>) -> String {
-    // Embed as JSON in a typed script tag. Escape `</` so an embedded string can never
-    // close the tag early; `JSON.parse` and serde both read `<\/` back as `</`.
-    let embed = |id: &str, snap: Option<&Snapshot>| {
-        let json = match snap {
-            Some(s) => code_split_core::to_canonical_string(s).expect("serialize snapshot"),
-            None => "null".to_string(),
-        };
-        format!(
-            "<script type=\"application/json\" id=\"{id}\">{}</script>",
-            json.replace("</", "<\\/")
-        )
-    };
-    let data_script = format!(
-        "{}\n{}",
-        embed("cs-baseline", baseline),
-        embed("cs-current", current),
-    );
-
-    ASSET_HTML
-        .replace(
-            r#"<link rel="stylesheet" href="./index.css">"#,
-            &format!("<style>{}</style>", ASSET_CSS),
-        )
-        .replace(
-            r#"<script src="./graphviz.umd.js"></script>"#,
-            &format!("<script>{}</script>", ASSET_GV),
-        )
-        .replace(
-            r#"<script src="./snarkdown.umd.js"></script>"#,
-            &format!("<script>{}</script>", ASSET_SNARKDOWN),
-        )
-        .replace(r#"<script src="./data.js"></script>"#, &data_script)
-        .replace(
-            r#"<script src="./diff.js"></script>"#,
-            &format!("<script>{}</script>", ASSET_DIFF),
-        )
-        .replace(
-            r#"<script src="./layout.js"></script>"#,
-            &format!("<script>{}</script>", ASSET_LAYOUT),
-        )
-        .replace(
-            r#"<script src="./utils.js"></script>"#,
-            &format!("<script>{}</script>", ASSET_UTILS),
-        )
-        .replace(
-            r#"<script src="./modal.js"></script>"#,
-            &format!("<script>{}</script>", ASSET_MODAL),
-        )
-        .replace(
-            r#"<script src="./panzoom.js"></script>"#,
-            &format!("<script>{}</script>", ASSET_PANZOOM),
-        )
-        .replace(
-            r#"<script src="./diagram.js"></script>"#,
-            &format!("<script>{}</script>", ASSET_DIAGRAM),
-        )
-        .replace(
-            r#"<script src="./ui.js"></script>"#,
-            &format!("<script>{}</script>", ASSET_UI),
-        )
-        .replace(
-            r#"<script src="./summary.js"></script>"#,
-            &format!("<script>{}</script>", ASSET_SUMMARY),
-        )
-        .replace(
-            r#"<script src="./export-popup.js"></script>"#,
-            &format!("<script>{}</script>", ASSET_EXPORT_POPUP),
-        )
-        .replace(
-            r#"<script src="./node-table.js"></script>"#,
-            &format!("<script>{}</script>", ASSET_NODE_TABLE),
-        )
-        .replace(
-            r#"<script src="./nav.js"></script>"#,
-            &format!("<script>{}</script>", ASSET_NAV),
-        )
-        .replace(
-            r#"<script src="./app.js"></script>"#,
-            &format!("<script>{}</script>", ASSET_APP),
-        )
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────
@@ -1208,7 +1091,7 @@ mod tests {
             std::collections::HashMap::new(),
             None,
             Vec::new(),
-            code_split_core::PluginGraphs::default(),
+            code_split_graph::PluginGraphs::default(),
         )
     }
 
@@ -1216,7 +1099,7 @@ mod tests {
     fn viewer_embeds_snapshot_inline_and_round_trips() {
         let snap = mk_snap();
         // review: current = snapshot, baseline = null
-        let html = render_html_viewer(None, Some(&snap));
+        let html = code_split_viewer::render_html_viewer(None, Some(&snap));
         assert!(
             html.contains(r#"<script type="application/json" id="cs-current">"#),
             "embeds current snapshot inline"
@@ -1225,12 +1108,12 @@ mod tests {
             html.contains(r#"id="cs-baseline">null</script>"#),
             "baseline is null in review mode"
         );
-        let back = extract_embedded_snapshot(&html, "cs-current")
+        let back = code_split_viewer::extract_embedded_snapshot(&html, "cs-current")
             .expect("cs-current present")
             .unwrap();
         assert_eq!(back.plugin, "rust", "round-trips through embed/extract");
         assert!(
-            extract_embedded_snapshot(&html, "cs-baseline").is_none(),
+            code_split_viewer::extract_embedded_snapshot(&html, "cs-baseline").is_none(),
             "null baseline extracts to None"
         );
     }
@@ -1245,7 +1128,11 @@ mod tests {
         assert_eq!(load_snapshot_any(&jp).unwrap().plugin, "rust", "from .json");
 
         let hp = d.path().join("r.html");
-        fs::write(&hp, render_html_viewer(None, Some(&snap))).unwrap();
+        fs::write(
+            &hp,
+            code_split_viewer::render_html_viewer(None, Some(&snap)),
+        )
+        .unwrap();
         assert_eq!(
             load_snapshot_any(&hp).unwrap().plugin,
             "rust",

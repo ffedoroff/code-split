@@ -1,5 +1,5 @@
 [package]
-name = "code-split-complexity"
+name = "code-split-plugin"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -7,13 +7,11 @@ license.workspace = true
 repository.workspace = true
 keywords.workspace = true
 categories.workspace = true
-description = "Complexity metrics stage for Code Split: cyclomatic, cognitive, Halstead via rust-code-analysis."
+description = "Shared plugin layer for Code Split: complexity metrics, file-graph finalize, logging."
 
 [dependencies]
-code-split-core = { workspace = true }
+code-split-graph = { workspace = true }
 rust-code-analysis = { workspace = true }
 anyhow = { workspace = true }
-walkdir = "2"
-
-[dev-dependencies]
-syn = { workspace = true }
+walkdir = { workspace = true }
+chrono = { workspace = true }

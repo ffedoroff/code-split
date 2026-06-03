@@ -63,11 +63,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       # Only the leaf crate can be dry-run before release: the others depend on
-      # code-split-core at the new (unpublished) version, which cargo can't
+      # code-split-graph at the new (unpublished) version, which cargo can't
       # resolve until it's actually on crates.io (the real publish does it
       # bottom-up). The whole workspace is still compiled by the test job.
       - name: cargo publish --dry-run (leaf crate)
-        run: cargo publish -p code-split-core --dry-run --allow-dirty
+        run: cargo publish -p code-split-graph --dry-run --allow-dirty
 
   wheels-dry-run:
     name: PyPI wheel build (no upload)

@@ -1,14 +1,15 @@
 use anyhow::Result;
-use code_split_core::{
+use code_split_graph::{
     GraphBuilder, NodeKind, PluginGraphs, StageTime,
     graph::{Edge, EdgeKind, Node, Visibility},
 };
+use rust_code_analysis::{ParserTrait, PythonParser, metrics};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
-use crate::logger;
-use crate::plugin::finalize::finalize_file_graph;
+use code_split_plugin::finalize::finalize_file_graph;
+use code_split_plugin::logger;
 
 pub fn run(workspace: &Path) -> Result<(PluginGraphs, Vec<StageTime>)> {
     let mut timings = Vec::new();
@@ -37,7 +38,12 @@ pub fn run(workspace: &Path) -> Result<(PluginGraphs, Vec<StageTime>)> {
 
     {
         let t = logger::Timer::start("complexity: cyclomatic / cognitive / halstead / MI / LOC");
-        let annotated = match code_split_complexity::analyze_python(workspace, &mut builder) {
+        let annotated = match code_split_plugin::complexity::annotate(
+            workspace,
+            &mut builder,
+            &["py"],
+            |path, src| metrics(&PythonParser::new(src, path, None), path),
+        ) {
             Ok(n) => n,
             Err(e) => {
                 logger::info(&format!("complexity skipped: {e:#}"));
@@ -407,7 +413,7 @@ fn py_visibility(name: &str) -> Visibility {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use code_split_core::graph::Graph;
+    use code_split_graph::graph::Graph;
     use std::fs;
     use tempfile::TempDir;
 
