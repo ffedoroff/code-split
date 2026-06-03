@@ -10,14 +10,12 @@
 //! as a `flow_kinds` set — there is no hardcoded `uses`/`contains` knowledge.
 
 pub mod cycles;
-pub mod diff;
 pub mod finalize;
 pub mod hk;
 pub mod snapshot;
 pub mod stats;
 
 pub use cycles::annotate_cycles;
-pub use diff::compare_snapshots;
 pub use finalize::finalize_graph;
 pub use hk::annotate_hk;
 pub use snapshot::{

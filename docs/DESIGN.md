@@ -76,7 +76,7 @@ The three pillars of the design are:
 | `cpt-code-split-fr-file-graph` | All plugins emit a single file graph: `File` nodes with `uses` / `reexports` edges between files, plus `External` library nodes at depth 1 reached by `uses` edges flagged `external: true`. The Rust plugin derives it by collapsing its module graph; Python/JS/TS build it directly from import resolution. |
 | `cpt-code-split-fr-html-report` | Built-in Rust renderer in `code-split-cli`: `report` analyzes (or reads) the input, then renders an HTML template with inline assets alongside the JSON snapshot. |
 | `cpt-code-split-fr-node-sorting` | Node weight (fan-in + fan-out) is computed at render time and embedded in the HTML; client-side JavaScript sorts the table on user interaction. |
-| `cpt-code-split-fr-graph-diff` | Browser-side diff in the HTML viewer (`diff.js`), plus `compare_snapshots()` in `code-split-graph` for the `check --baseline` regression gate: node/edge set difference on the file graph, weight delta per node, `affected` propagation. |
+| `cpt-code-split-fr-graph-diff` | Browser-side diff in the HTML viewer (`diff.js` `computeDiff`/`computeCycles`): node/edge set difference on the file graph and `affected` propagation, from the two embedded snapshots. The `check --baseline` regression gate is rule-based (re-evaluates rules on the baseline), not a structured graph diff. |
 | `cpt-code-split-fr-diff-html-report` | With `report --baseline <snapshot>` the viewer becomes a self-contained diff with color-coded baseline/current views and a verdict; all assets inlined; the file is named `…-diff.html`. |
 | `cpt-code-split-fr-diff-text-report` | `check --baseline <snapshot> --output-format json` emits the machine-readable verdict (`improved` / `degraded` / `neutral`) and the list of new violations for CI parsing. |
 
@@ -131,7 +131,7 @@ flowchart TD
 |-------|---------------|------------|
 | Plugin — Presentation | Argument parsing, output routing, artifact writing | `clap`, `anyhow` (Rust) |
 | Plugin — Application | Dispatch language plugins, assemble the snapshot | `code-split-cli` (Rust) |
-| Plugin — Domain | Graph types, JSON schema, builder API | `code-split-graph`, `petgraph`, `serde` (Rust) |
+| Plugin — Domain | Generic graph model + operations (cycles/hk/stats/snapshot) | `code-split-plugin-api`, `code-split-graph`, `serde` (Rust) |
 | Plugin — Contract | The `LanguagePlugin` trait every language plugin implements; the CLI works only against it | `code-split-plugin-api` (Rust) |
 | Plugin — Infrastructure | Per-language analysis (one crate each, behind the trait) on a shared utility layer (complexity, finalize, logging) | `code-split-plugin-rust`/`-python`/`-javascript`, `code-split-plugin`, `syn`, `tree-sitter`, `rust-code-analysis` (Rust) |
 | Check | Analyze (or read) input, evaluate rules and (with `--baseline`) regressions, print diagnostics, exit non-zero on violation | `code-split-cli` (Rust) |
@@ -251,9 +251,10 @@ keys it understands, described per level by the semantics dictionaries.
 - `Node` → `Node`: linked via `Edge` (`source` → `target`).
 - `Graph` → `Node`/`Edge`: ownership; a node carries an optional `parent`
   pointing to a containing node (unused today — folder grouping is deferred).
-- Snapshot diff (`--baseline`) is **not implemented** in this release; the
-  former `CompareSummary` / `compare_snapshots` is a stub that returns a
-  not-implemented error.
+- Snapshot diff (`--baseline`) is computed **browser-side** by the viewer
+  (`diff.js`) from the two embedded snapshots; there is no server-side
+  `compare_snapshots` / `CompareSummary` (removed). `check --baseline` gates
+  by re-evaluating rules on the baseline, not by a structured graph diff.
 
 ### 3.2 Component Model
 
@@ -296,9 +297,8 @@ Modules:
   unchanged input.
 - **`lib.rs`** — `coupling_specs()` (the coupling/cycle `AttributeSpec`s + the
   `coupling` group, merged in by the orchestrator) and the shared `round_sig3` /
-  `num_attr` numeric helpers.
-- **`diff.rs`** — `compare_snapshots`: **stubbed**, returns a not-implemented
-  error (the `--baseline` snapshot-diff flow is deferred to a later release).
+  `num_attr` numeric helpers. (There is no server-side snapshot-diff module —
+  `--baseline` diffing is done browser-side by the viewer's `diff.js`.)
 
 #### code-split-plugin-api
 
@@ -770,7 +770,6 @@ See [§3.7 Plugin System](#37-plugin-system).
 | `cargo_metadata` crate | `MetadataCommand::exec()` | Enumerate workspace crates and path-dependencies |
 | `syn` crate | `syn::parse_file`, `syn::visit::Visit` | Parse Rust source for module hierarchy and `use` statements |
 | `rust-code-analysis` (fork: `ffedoroff/rust-code-analysis`, branch `patch/update-tree-sitter-0.26.8`) | `metrics(&parser, path) -> Option<FuncSpace>` | Tree-sitter-based multi-language complexity metrics |
-| `petgraph` crate | `DiGraph` | Internal graph storage |
 | `serde` + `serde_json` | derive macros, `to_writer_pretty` | JSON serialization |
 | `clap` | derive macros | CLI argument parsing |
 | Python stdlib | `json`, `pathlib`, `argparse` | JSON processing, file I/O, CLI parsing in Python tools |
@@ -1258,7 +1257,7 @@ code-split/
           snarkdown.umd.js # Markdown→HTML renderer (~2 KB, offline) for the prompt preview
           layout.js        # buildDOT — DOT graph construction (external nodes amber/dashed)
           panzoom.js       # Pan/zoom logic
-          state.js         # App state and layout cache
+          schema.js        # Snapshot data-access layer (specs, evalCalc/calcDisplay)
           app.js           # Entry point, event wiring
           diff.js          # Browser-side diff + cycle computation
           node-table.js    # Sortable node table

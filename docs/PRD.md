@@ -739,19 +739,17 @@ and instructs the LLM to audit the codebase against each principle.
 
 #### Graph Diff Engine
 
-- [ ] `p1` - **ID**: `cpt-code-split-fr-graph-diff`
+- [x] `p1` - **ID**: `cpt-code-split-fr-graph-diff`
 
-> **Deferred — not implemented in this release.** The structured
-> snapshot-to-snapshot diff (`compare_snapshots`: nodes/edges added / removed /
-> affected) was tied to the pre-redesign model; it is stubbed (returns a
-> not-implemented error) and will be reintroduced against the generic model
-> later, together with the diff HTML viewer (the JS assets are not yet migrated
-> to schema `"2"`). The **relative `check --baseline` gate** below
-> (`cpt-code-split-fr-compare`) is implemented by a different mechanism
-> (re-evaluating the rules against the baseline snapshot), and does not depend on
-> this engine. The remainder of this FR describes the deferred viewer behavior.
+> **Computed browser-side from two embedded snapshots.** `report --baseline`
+> embeds both the baseline (`cs-baseline`) and current (`cs-current`) snapshots
+> inline; the data-driven viewer (`diff.js` `computeDiff` / `computeCycles`)
+> derives node/edge added / removed / affected status and per-side cycle status
+> at load. There is **no** server-side structured count summary in the JSON (the
+> old `compare_snapshots` engine is gone); the relative gate
+> (`cpt-code-split-fr-compare`) is rule-based, not count-based.
 
-With `--baseline <snapshot>`, `code-split report` will compute a structured
+With `--baseline <snapshot>`, `code-split report` computes a structured
 diff between the baseline snapshot and the current `[input]`: nodes and
 edges added, removed, or affected. The diff includes an overall
 verdict: `improved`, `degraded`, or `neutral`. The interactive
@@ -829,14 +827,10 @@ static visualizations manually.
 
 #### Diff HTML Report
 
-- [ ] `p1` - **ID**: `cpt-code-split-fr-diff-html-report`
+- [x] `p1` - **ID**: `cpt-code-split-fr-diff-html-report`
 
-> **Deferred — not implemented in this release** (the HTML viewer is not yet
-> migrated to schema `"2"`; `report --baseline` currently embeds the current
-> snapshot but renders no diff). Target behavior:
-
-`code-split report --baseline` will generate a single self-contained
-offline HTML report displaying:
+`code-split report --baseline` generates a single self-contained
+offline HTML report (named `…-diff.html`) displaying:
 
 - Added / removed / affected files and edges, color-coded by per-node diff
   state (added, removed, affected, unchanged)
@@ -881,17 +875,16 @@ JSON summary — a `verdict` wrapper around the new-violations list:
 }
 ```
 
-> The earlier count-based summary (node/edge added/removed/affected, SCC counts)
-> is part of the deferred `cpt-code-split-fr-graph-diff` engine and is not
-> emitted in this release.
+> A count-based summary (node/edge added/removed/affected, SCC counts) is **not**
+> emitted in the JSON; the visual diff is computed browser-side from the two
+> embedded snapshots (see `cpt-code-split-fr-graph-diff`).
 
-The human-facing counterpart, `code-split report --baseline` (the interactive
-diff HTML viewer), is **deferred** with the rest of the viewer
-(`cpt-code-split-fr-diff-html-report`).
+The human-facing counterpart is `code-split report --baseline`
+(`cpt-code-split-fr-diff-html-report`), the interactive self-contained diff HTML
+viewer — the same comparison surfaced two ways.
 
 **Rationale**: `check --baseline` is the machine gate (an exit code and a
-JSON verdict for CI); the shareable human diff viewer follows once the viewer is
-migrated.
+JSON verdict for CI); `report --baseline` is the shareable human diff viewer.
 
 **Actors**: `cpt-code-split-actor-developer`, `cpt-code-split-actor-ci`,
 `cpt-code-split-actor-pr-reviewer`
@@ -1260,8 +1253,7 @@ as a self-contained HTML report.
   snapshots; the verdict (`improved` / `degraded` / `neutral`) is present
 - [x] All P1 tools operate with zero outbound network calls
 - [x] Generated HTML reports contain no external resource references
-- [x] JSON artifacts conform to Graph JSON Schema v1 and pass schema
-  validation
+- [x] JSON artifacts conform to the Graph JSON Schema (`schema_version: "2"`)
 - [ ] A `--baseline` comparison exits non-zero with a structured error on
   schema version mismatch
 
@@ -1271,8 +1263,8 @@ as a self-contained HTML report.
 |------------|-------------|----------|
 | `cargo_metadata` crate | Cargo workspace enumeration (local vs. external crates) | p1 |
 | `syn` crate | Rust source parsing for the module tree and `use` statements | p1 |
-| `petgraph` crate | In-memory graph representation in the Rust plugin | p1 |
-| `rust-code-analysis` crate | Tree-sitter-based multi-language metrics library (cyclomatic, cognitive, Halstead, MI, LOC, NOM, nexits, nargs); used via fork `ffedoroff/rust-code-analysis` | p1 |
+| `rust-code-analysis` crate | Tree-sitter-based multi-language metrics library (cyclomatic, cognitive, Halstead, MI, LOC); the central `code-split-complexity` pass; via fork `ffedoroff/rust-code-analysis` | p1 |
+| `tree-sitter` (+ `-python` / `-javascript` / `-typescript`) | Source parsing in the Python / JavaScript / TypeScript plugins | p3 |
 | Python 3.9+ | Runtime for the built-in Python language plugin | p3 |
 
 ## 11. Assumptions
