@@ -3,7 +3,7 @@
 //! a snapshot back out of a generated report.
 
 use anyhow::{Context, Result};
-use code_split_graph::Snapshot;
+use code_split_graph::snapshot::Snapshot;
 
 /// Pull the JSON out of `<script type="application/json" id="{id}">…</script>`
 /// and parse it into a `Snapshot`. Returns `None` if the tag is absent or holds
@@ -50,7 +50,7 @@ pub fn render_html_viewer(baseline: Option<&Snapshot>, current: Option<&Snapshot
     // close the tag early; `JSON.parse` and serde both read `<\/` back as `</`.
     let embed = |id: &str, snap: Option<&Snapshot>| {
         let json = match snap {
-            Some(s) => code_split_graph::to_canonical_string(s).expect("serialize snapshot"),
+            Some(s) => code_split_graph::snapshot::to_canonical_string(s).expect("serialize snapshot"),
             None => "null".to_string(),
         };
         format!(

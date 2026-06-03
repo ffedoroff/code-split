@@ -4,7 +4,7 @@
 //! on the crate root, so the enrichment passes can pull helpers from here
 //! without creating a `submodule → crate-root` back-edge.
 
-use code_split_plugin_api::{AttrValue, Node};
+use code_split_plugin_api::{attrs::AttrValue, node::Node};
 
 /// Truncate to 3 significant digits (matching the historical `sig3` serializer):
 /// values ≥ 1 are truncated to 3 decimals, values < 1 to 3 significant figures.

@@ -7,8 +7,8 @@ mod recommend;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
-use code_split_graph::{LevelGraph, LevelUi, Snapshot};
-use code_split_plugin_api::PluginInput;
+use code_split_graph::snapshot::{LevelGraph, LevelUi, Snapshot};
+use code_split_plugin_api::plugin::PluginInput;
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 
@@ -395,7 +395,7 @@ fn analyze_directory(
     let (mut graph, levels) = plugin::analyze(&plugin_name, &target, &input)
         .with_context(|| format!("plugin '{plugin_name}' failed"))?;
     let file_count = graph.nodes.iter().filter(|n| n.kind == "file").count();
-    timings.push(code_split_graph::StageTime {
+    timings.push(code_split_graph::snapshot::StageTime {
         stage: plugin_name.clone(),
         ms: t.finish_quiet(),
         detail: format!("{} nodes from {} files", graph.nodes.len(), file_count),
@@ -404,7 +404,7 @@ fn analyze_directory(
     // 2. Central complexity pass (reads files by their absolute id).
     let t = logger::Timer::start("complexity");
     let annotated = code_split_complexity::annotate(&mut graph);
-    timings.push(code_split_graph::StageTime {
+    timings.push(code_split_graph::snapshot::StageTime {
         stage: "complexity".into(),
         ms: t.finish_quiet(),
         detail: format!("{annotated} nodes annotated"),
@@ -412,27 +412,27 @@ fn analyze_directory(
 
     // 3. Canonicalize structure, then relativize ids against detected roots.
     let t = logger::Timer::start("projection");
-    code_split_graph::finalize_graph(&mut graph);
+    code_split_graph::finalize::finalize_graph(&mut graph);
     let mut roots = detect_roots();
     roots.insert("target".to_string(), target.display().to_string());
-    code_split_graph::relativize_graph(&mut graph, &target, &roots);
+    code_split_graph::snapshot::relativize_graph(&mut graph, &target, &roots);
 
     // 4. Apply ignore filters (tokenized ids), then compute the derived data.
     config::apply_ignore(&mut graph, &cfg.ignore, &target)?;
 
     let level_spec = levels.into_iter().find(|l| l.name == "files");
     let flow_kinds = flow_kinds(level_spec.as_ref());
-    let mut cycles = code_split_graph::annotate_cycles(&mut graph, &flow_kinds);
+    let mut cycles = code_split_graph::cycles::annotate_cycles(&mut graph, &flow_kinds);
     config::apply_cycle_rules(&mut cycles, &mut graph.nodes, &cfg.rules.cycles);
-    code_split_graph::annotate_hk(&mut graph, &flow_kinds);
-    let stats = code_split_graph::compute_stats(&graph);
+    code_split_graph::hk::annotate_hk(&mut graph, &flow_kinds);
+    let stats = code_split_graph::stats::compute_stats(&graph);
 
     let edge_count = graph.edges.len();
     let node_count = graph.nodes.len();
     let thresholds = plugin::thresholds(&plugin_name);
     let level = assemble_level(level_spec, graph, cycles, stats, thresholds);
     prune_unused_roots(&level, &mut roots);
-    timings.push(code_split_graph::StageTime {
+    timings.push(code_split_graph::snapshot::StageTime {
         stage: "projection".into(),
         ms: t.finish_quiet(),
         detail: format!("nodes={node_count} edges={edge_count}"),
@@ -482,7 +482,7 @@ fn analyze_directory(
 
 /// The set of edge kinds that carry information flow at this level (read from
 /// `EdgeKindSpec.flow`). Cycles and coupling count only these.
-fn flow_kinds(level: Option<&code_split_plugin_api::Level>) -> HashSet<String> {
+fn flow_kinds(level: Option<&code_split_plugin_api::level::Level>) -> HashSet<String> {
     match level {
         Some(l) => l
             .edge_kinds
@@ -499,15 +499,15 @@ fn flow_kinds(level: Option<&code_split_plugin_api::Level>) -> HashSet<String> {
 /// edge kinds / groups) to what is actually present, and attach the graph,
 /// cycles and stats.
 fn assemble_level(
-    level_spec: Option<code_split_plugin_api::Level>,
-    graph: code_split_plugin_api::Graph,
-    cycles: Vec<code_split_graph::CycleGroup>,
-    stats: BTreeMap<String, code_split_plugin_api::AttrValue>,
-    thresholds: BTreeMap<String, code_split_plugin_api::Thresholds>,
+    level_spec: Option<code_split_plugin_api::level::Level>,
+    graph: code_split_plugin_api::graph::Graph,
+    cycles: Vec<code_split_graph::snapshot::CycleGroup>,
+    stats: BTreeMap<String, code_split_plugin_api::attrs::AttrValue>,
+    thresholds: BTreeMap<String, code_split_plugin_api::level::Thresholds>,
 ) -> LevelGraph {
     use std::collections::BTreeSet;
 
-    let spec = level_spec.unwrap_or_else(|| code_split_plugin_api::Level {
+    let spec = level_spec.unwrap_or_else(|| code_split_plugin_api::level::Level {
         name: "files".into(),
         edge_kinds: BTreeMap::new(),
         node_attributes: BTreeMap::new(),
@@ -648,7 +648,7 @@ const UI_CARD: &[&str] = &["hk", "sloc"];
 /// Build the `ui` block from the pruned node-attribute dictionary: keep the
 /// canonical order, drop anything not present. `kind` is always a column;
 /// `cycle` is a column/sort metric only when it survived pruning.
-fn build_ui(node_attributes: &BTreeMap<String, code_split_plugin_api::AttributeSpec>) -> LevelUi {
+fn build_ui(node_attributes: &BTreeMap<String, code_split_plugin_api::level::AttributeSpec>) -> LevelUi {
     let has = |k: &str| k == "kind" || node_attributes.contains_key(k);
     let pick = |list: &[&str]| -> Vec<String> {
         list.iter()
@@ -912,10 +912,10 @@ fn print_current_values(graphs: &BTreeMap<String, LevelGraph>, cycles: &config::
 /// Emit a `[rules.thresholds.<scope>]` block with the per-file metric maxima,
 /// read from the flat node `attrs`.
 fn print_scope_values(scope: &str, level: &LevelGraph) {
-    let attr = |n: &code_split_plugin_api::Node, key: &str| -> f64 {
+    let attr = |n: &code_split_plugin_api::node::Node, key: &str| -> f64 {
         match n.attrs.get(key) {
-            Some(code_split_plugin_api::AttrValue::Int(i)) => *i as f64,
-            Some(code_split_plugin_api::AttrValue::Float(f)) => *f,
+            Some(code_split_plugin_api::attrs::AttrValue::Int(i)) => *i as f64,
+            Some(code_split_plugin_api::attrs::AttrValue::Float(f)) => *f,
             _ => 0.0,
         }
     };
@@ -1092,7 +1092,7 @@ fn run_report(
             .or(a.output.json.path.as_deref())
             .unwrap_or(DEFAULT_JSON_PATH);
         let dest = render_name(tpl, &target, commit);
-        let mut json = code_split_graph::to_canonical_string_pretty(snap)?;
+        let mut json = code_split_graph::snapshot::to_canonical_string_pretty(snap)?;
         json.push('\n');
         write_artifact(&dest, &json, "json")?;
     }
@@ -1333,7 +1333,7 @@ fn prune_unused_roots(level: &LevelGraph, roots: &mut BTreeMap<String, String>) 
     used.insert("target".to_string());
     for node in &level.nodes {
         let path_attr = match node.attrs.get("path") {
-            Some(code_split_plugin_api::AttrValue::Str(p)) => p.as_str(),
+            Some(code_split_plugin_api::attrs::AttrValue::Str(p)) => p.as_str(),
             _ => "",
         };
         for name in roots.keys() {

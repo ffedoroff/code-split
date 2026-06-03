@@ -3,7 +3,7 @@
 //! references. Structural edges (e.g. `contains`) are preserved — they carry no
 //! flow but are kept for display and ownership.
 
-use code_split_plugin_api::Graph;
+use code_split_plugin_api::graph::Graph;
 use std::collections::HashSet;
 
 use crate::attrs::is_external;
@@ -39,7 +39,7 @@ pub fn finalize_graph(graph: &mut Graph) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use code_split_plugin_api::{Edge, Node};
+    use code_split_plugin_api::{edge::Edge, node::Node};
 
     fn edge(from: &str, to: &str) -> Edge {
         Edge {

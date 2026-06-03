@@ -7,8 +7,8 @@
 //! The metric attribute dictionary it can produce is exposed via
 //! [`metric_specs`] so the orchestrator can declare it in the snapshot.
 
-use code_split_graph::num_attr;
-use code_split_plugin_api::{AttributeGroup, AttributeSpec, Graph, ValueType};
+use code_split_graph::attrs::num_attr;
+use code_split_plugin_api::{attrs::ValueType, graph::Graph, level::{AttributeGroup, AttributeSpec}};
 use rust_code_analysis::{
     FuncSpace, JavascriptParser, ParserTrait, PythonParser, RustParser, TsxParser,
     TypescriptParser, metrics,
@@ -54,12 +54,12 @@ fn parse_metrics(path: &Path, src: Vec<u8>) -> Option<FuncSpace> {
 /// Write the metric attributes for one file node. Each value is omitted when it
 /// rounds to zero; the LOC block is gated on `sloc > 0` and the Halstead block
 /// on `volume > 0` (matching the historical behavior).
-fn write_metrics(node: &mut code_split_plugin_api::Node, s: &FuncSpace) {
+fn write_metrics(node: &mut code_split_plugin_api::node::Node, s: &FuncSpace) {
     let m = &s.metrics;
     let mut put = |key: &str, v: f64| {
         let a = num_attr(v);
-        if matches!(&a, code_split_plugin_api::AttrValue::Int(0))
-            || matches!(&a, code_split_plugin_api::AttrValue::Float(f) if *f == 0.0)
+        if matches!(&a, code_split_plugin_api::attrs::AttrValue::Int(0))
+            || matches!(&a, code_split_plugin_api::attrs::AttrValue::Float(f) if *f == 0.0)
         {
             node.attrs.remove(key);
         } else {

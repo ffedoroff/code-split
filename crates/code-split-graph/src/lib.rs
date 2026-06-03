@@ -3,7 +3,7 @@
 //! stats, id relativization, and the serializable [`Snapshot`] artifact.
 //!
 //! Everything here is language-agnostic. Plugins emit a pure
-//! [`api::Graph`](code_split_plugin_api::Graph) (structure only); this crate
+//! [`api::Graph`](code_split_plugin_api::graph::Graph) (structure only); this crate
 //! and the orchestrator enrich it (writing computed values into node `attrs`
 //! by id) and assemble the snapshot. Which edge kinds count as information
 //! flow is read from the level's `edge_kinds` (`EdgeKindSpec.flow`), passed in
@@ -16,21 +16,11 @@ pub mod hk;
 pub mod snapshot;
 pub mod stats;
 
-pub use attrs::{num_attr, round_sig3};
-pub use cycles::annotate_cycles;
-pub use finalize::finalize_graph;
-pub use hk::annotate_hk;
-pub use snapshot::{
-    CycleGroup, GitInfo, LevelGraph, LevelUi, Snapshot, StageTime, relativize_graph,
-    relativize_level, to_canonical_string, to_canonical_string_pretty,
-};
-pub use stats::compute_stats;
-
-use code_split_plugin_api::{AttributeGroup, AttributeSpec, ValueType};
+use code_split_plugin_api::{attrs::ValueType, level::{AttributeGroup, AttributeSpec}};
 use std::collections::BTreeMap;
 
-/// The coupling/cycle attribute dictionary produced by [`annotate_hk`] /
-/// [`annotate_cycles`], plus the `coupling` group. The orchestrator merges these
+/// The coupling/cycle attribute dictionary produced by [`annotate_hk`](hk::annotate_hk) /
+/// [`annotate_cycles`](cycles::annotate_cycles), plus the `coupling` group. The orchestrator merges these
 /// into each level's `node_attributes` / `attribute_groups`.
 pub fn coupling_specs() -> (
     BTreeMap<String, AttributeSpec>,

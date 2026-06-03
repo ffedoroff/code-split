@@ -4,7 +4,7 @@
 //! per language. The catalog lives here (the assembler) so `code-split-plugin-api`
 //! stays a thin contract.
 
-use code_split_plugin_api::Preset;
+use code_split_plugin_api::plugin::Preset;
 
 const PRINCIPLES_URL: &str = "https://github.com/ffedoroff/code-split/blob/main/principles";
 

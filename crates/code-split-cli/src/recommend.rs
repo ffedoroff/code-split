@@ -9,8 +9,8 @@
 //! `node_attributes[*].thresholds` (the `info` / `warning` tiers) — never a gate.
 
 use anyhow::{Result, bail};
-use code_split_graph::LevelGraph;
-use code_split_plugin_api::{AttrValue, Node, Preset, Thresholds};
+use code_split_graph::snapshot::LevelGraph;
+use code_split_plugin_api::{attrs::AttrValue, level::Thresholds, node::Node, plugin::Preset};
 
 /// Which threshold tier drives an output. `Auto` resolves to `Warning` when any
 /// module breaches it, else `Info` (the viewer's headline rule).
@@ -311,13 +311,13 @@ pub fn compose_prompt(
         .filter(|n| is_internal(n))
         .map(|n| n.id.as_str())
         .collect();
-    let local_edges: Vec<&code_split_plugin_api::Edge> = level
+    let local_edges: Vec<&code_split_plugin_api::edge::Edge> = level
         .edges
         .iter()
         .filter(|e| internal.contains(e.source.as_str()) && internal.contains(e.target.as_str()))
         .collect();
 
-    let edge_line = |e: &code_split_plugin_api::Edge| {
+    let edge_line = |e: &code_split_plugin_api::edge::Edge| {
         format!(
             "- `{}` → `{}` ({})",
             clean_path(&e.source),
@@ -326,7 +326,7 @@ pub fn compose_prompt(
         )
     };
     let push_conn =
-        |parts: &mut Vec<String>, title: &str, edges: Vec<&code_split_plugin_api::Edge>| {
+        |parts: &mut Vec<String>, title: &str, edges: Vec<&code_split_plugin_api::edge::Edge>| {
             if edges.is_empty() {
                 return;
             }
@@ -692,7 +692,7 @@ pub fn render_scorecard(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use code_split_plugin_api::{AttributeSpec, ValueType};
+    use code_split_plugin_api::{attrs::ValueType, level::AttributeSpec};
     use std::collections::BTreeMap;
 
     fn node_kind(id: &str, kind: &str, attrs: &[(&str, AttrValue)]) -> Node {
@@ -847,7 +847,7 @@ mod tests {
                 ],
             ),
         ]);
-        level.edges.push(code_split_plugin_api::Edge {
+        level.edges.push(code_split_plugin_api::edge::Edge {
             source: "{target}/a.rs".into(),
             target: "{target}/b.rs".into(),
             kind: "uses".into(),

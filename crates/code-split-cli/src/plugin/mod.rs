@@ -4,7 +4,7 @@
 //! [`registry`].
 
 use anyhow::{Result, bail};
-use code_split_plugin_api::{Graph, LanguagePlugin, Level, PluginInput, Preset, Thresholds};
+use code_split_plugin_api::{graph::Graph, level::{Level, Thresholds}, plugin::{LanguagePlugin, PluginInput, Preset}};
 use std::collections::BTreeMap;
 use std::path::Path;
 

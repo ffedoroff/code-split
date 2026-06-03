@@ -304,12 +304,17 @@ Modules:
   only on the plugin API, never on the crate root — so the passes import helpers
   from here instead of `use crate::…`, which would otherwise close a
   `submodule → lib.rs → submodule` dependency cycle.
-- **`lib.rs`** — a pure aggregator: `coupling_specs()` (the coupling/cycle
-  `AttributeSpec`s + the `coupling` group, merged in by the orchestrator) and the
-  downward re-exports (`attrs`, `cycles`, `finalize`, `hk`, `snapshot`, `stats`),
-  including `pub use attrs::{num_attr, round_sig3}` for the crate's public API. It
-  is never imported by its own submodules. (There is no server-side snapshot-diff
-  module — `--baseline` diffing is done browser-side by the viewer's `diff.js`.)
+- **`lib.rs`** — declares the submodules (`pub mod attrs; … pub mod stats;`) and
+  holds `coupling_specs()` (the coupling/cycle `AttributeSpec`s + the `coupling`
+  group, merged in by the orchestrator). It carries **no `pub use` re-exports** —
+  consumers import each item from its owning submodule path
+  (`code_split_graph::snapshot::Snapshot`, `…::cycles::annotate_cycles`,
+  `…::attrs::num_attr`, …). Keeping the crate root off the flow graph (no
+  re-export hub) is deliberate: a flat prelude gave `lib.rs` a flow edge to every
+  submodule (`fan_out`), and Henry-Kafura — `sloc × (fan_in × fan_out)²` —
+  squares that, so the root scored a large false-positive HK. (There is no
+  server-side snapshot-diff module — `--baseline` diffing is done browser-side by
+  the viewer's `diff.js`.)
 
 #### code-split-plugin-api
 
@@ -319,7 +324,12 @@ The **foundation** crate: it defines the generic model (`Node` / `Edge` /
 `Graph` / `Attributes` / `AttrValue` / `Level` + the `EdgeKindSpec` /
 `AttributeSpec` / `AttributeGroup` spec types) and the single trait,
 `LanguagePlugin`. It depends on **nothing** of ours (only `serde` + `anyhow`)
-and re-exports nothing; every other crate depends on it.
+and re-exports nothing; every other crate depends on it. The model lives in
+topic submodules (`attrs` / `edge` / `graph` / `level` / `node` / `plugin`) and
+consumers import from those paths (`code_split_plugin_api::node::Node`,
+`…::graph::Graph`, …) rather than a flat crate-root prelude — the root has no
+`pub use` hub, which keeps its `fan_out` (and therefore Henry-Kafura HK) low for
+a crate that everything else depends on.
 
 `LanguagePlugin` is a **pure parser** contract — `name`, `detect(ws, input)`
 (can-parse, replacing markers), `levels` (the levels + their semantics

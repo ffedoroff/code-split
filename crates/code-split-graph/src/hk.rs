@@ -5,7 +5,7 @@
 //! flat keys; zero values are omitted.
 
 use crate::attrs::{attr_f64, is_external, num_attr};
-use code_split_plugin_api::{AttrValue, Graph, NodeId};
+use code_split_plugin_api::{attrs::AttrValue, graph::Graph, node::NodeId};
 use std::collections::{HashMap, HashSet};
 
 /// Annotate `fan_in` / `fan_out` / `fan_out_external` / `hk` on every internal
@@ -73,7 +73,7 @@ pub fn annotate_hk(graph: &mut Graph, flow_kinds: &HashSet<String>) {
     }
 }
 
-fn set_or_clear(node: &mut code_split_plugin_api::Node, key: &str, v: f64) {
+fn set_or_clear(node: &mut code_split_plugin_api::node::Node, key: &str, v: f64) {
     if v > 0.0 {
         node.attrs.insert(key.to_string(), AttrValue::Int(v as i64));
     } else {
@@ -84,7 +84,7 @@ fn set_or_clear(node: &mut code_split_plugin_api::Node, key: &str, v: f64) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use code_split_plugin_api::{Edge, Node};
+    use code_split_plugin_api::{edge::Edge, node::Node};
 
     fn file(id: &str, sloc: i64) -> Node {
         let mut n = Node {

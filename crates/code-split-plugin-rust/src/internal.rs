@@ -1,6 +1,6 @@
 //! Internal intermediate graph model used during parsing. The parsing stages
 //! (crate_graph, module_graph) build these; `collapse_to_files` converts them
-//! to the public `code_split_plugin_api::Graph`.
+//! to the public `code_split_plugin_api::graph::Graph`.
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum NodeKind {

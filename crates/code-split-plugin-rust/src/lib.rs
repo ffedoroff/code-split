@@ -1,8 +1,5 @@
 use anyhow::Result;
-use code_split_plugin_api::{
-    AttrValue, AttributeSpec, Edge, EdgeKindSpec, Graph, LanguagePlugin, Level, Node, PluginInput,
-    Thresholds, ValueType, default_cycle_kinds, default_node_kinds,
-};
+use code_split_plugin_api::{attrs::{AttrValue, ValueType}, edge::Edge, graph::Graph, level::{AttributeSpec, EdgeKindSpec, Level, Thresholds}, node::Node, plugin::{LanguagePlugin, PluginInput}, default_cycle_kinds, default_node_kinds};
 use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;

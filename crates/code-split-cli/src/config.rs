@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
-use code_split_graph::{CycleGroup, LevelGraph};
-use code_split_plugin_api::{AttrValue, Graph, Node};
+use code_split_graph::snapshot::{CycleGroup, LevelGraph};
+use code_split_plugin_api::{attrs::AttrValue, graph::Graph, node::Node};
 use globset::{Glob, GlobSet, GlobSetBuilder};
 use serde::{Deserialize, Deserializer};
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};

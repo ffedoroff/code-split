@@ -4,7 +4,7 @@
 //! its average is positive.
 
 use crate::attrs::{attr_f64, is_external, num_attr};
-use code_split_plugin_api::{AttrValue, Graph};
+use code_split_plugin_api::{attrs::AttrValue, graph::Graph};
 use std::collections::BTreeMap;
 
 /// Metrics averaged into the stats block, in a fixed vocabulary. Structural-only
@@ -55,7 +55,7 @@ pub fn compute_stats(graph: &Graph) -> BTreeMap<String, AttrValue> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use code_split_plugin_api::Node;
+    use code_split_plugin_api::node::Node;
 
     fn file(id: &str, cyclomatic: Option<i64>) -> Node {
         let mut n = Node {

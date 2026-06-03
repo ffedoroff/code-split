@@ -6,10 +6,7 @@
 //! reuse the walker/resolver without any copy-paste.
 
 use anyhow::Result;
-use code_split_plugin_api::{
-    AttrValue, AttributeSpec, Edge, EdgeKindSpec, Graph, LanguagePlugin, Level, Node, PluginInput,
-    ValueType, default_cycle_kinds, default_node_kinds,
-};
+use code_split_plugin_api::{attrs::{AttrValue, ValueType}, edge::Edge, graph::Graph, level::{AttributeSpec, EdgeKindSpec, Level}, node::Node, plugin::{LanguagePlugin, PluginInput}, default_cycle_kinds, default_node_kinds};
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;

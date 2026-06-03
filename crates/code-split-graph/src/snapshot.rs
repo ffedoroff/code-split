@@ -11,10 +11,7 @@
 //! without hardcoding names.
 
 use chrono::{DateTime, Utc};
-use code_split_plugin_api::{
-    AttrValue, AttributeGroup, AttributeSpec, CycleKindSpec, Edge, EdgeKindSpec, Graph, Node,
-    NodeId, NodeKindSpec, Preset,
-};
+use code_split_plugin_api::{attrs::AttrValue, edge::Edge, graph::Graph, level::{AttributeGroup, AttributeSpec, CycleKindSpec, EdgeKindSpec, NodeKindSpec}, node::{Node, NodeId}, plugin::Preset};
 use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
 use std::collections::BTreeMap;
@@ -322,7 +319,7 @@ mod tests {
 
     #[test]
     fn relativize_level_rewrites_ids_edges_and_cycles() {
-        use code_split_plugin_api::Edge;
+        use code_split_plugin_api::edge::Edge;
         let mut level = LevelGraph::default();
         level.nodes.push(Node {
             id: "/p/src/a.rs".into(),

@@ -4,7 +4,7 @@
 //! flagged as a false cycle.
 
 use crate::snapshot::CycleGroup;
-use code_split_plugin_api::{AttrValue, Graph};
+use code_split_plugin_api::{attrs::AttrValue, graph::Graph};
 use std::collections::HashMap;
 use std::collections::HashSet;
 
@@ -168,7 +168,7 @@ fn dfs_collect(start: usize, adj: &[Vec<usize>], visited: &mut [bool], scc: &mut
 #[cfg(test)]
 mod tests {
     use super::*;
-    use code_split_plugin_api::{Edge, Node};
+    use code_split_plugin_api::{edge::Edge, node::Node};
 
     fn node(id: &str, name: &str) -> Node {
         Node {

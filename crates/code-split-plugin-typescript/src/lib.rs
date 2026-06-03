@@ -4,7 +4,7 @@
 //! shared ECMAScript walker/resolver from `code-split-plugin-javascript`.
 
 use anyhow::Result;
-use code_split_plugin_api::{Graph, LanguagePlugin, Level, PluginInput};
+use code_split_plugin_api::{graph::Graph, level::Level, plugin::{LanguagePlugin, PluginInput}};
 use code_split_plugin_javascript::{analyze_ecmascript, detect_with_marker, ecmascript_level};
 use std::path::Path;
 
@@ -48,7 +48,7 @@ impl LanguagePlugin for TypescriptPlugin {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use code_split_plugin_api::LanguagePlugin;
+    use code_split_plugin_api::plugin::LanguagePlugin;
     use std::fs;
     use tempfile::TempDir;
 
