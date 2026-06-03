@@ -543,11 +543,22 @@ a bare invocation prints help. `main()` owns two subcommands — `check` and
 to **analyze**, or a `.json`/`.html` snapshot to **read**, via
 `analyze_input` → `is_snapshot_input`):
 
+The binary is decomposed by concern — `main()` only parses and dispatches:
+`cli.rs` (the clap argument model), `analyze.rs` (input dispatch, the snapshot
+path, and snapshot loading), `pipeline.rs` (the directory-analysis pipeline +
+`LevelGraph` assembly, owning the `Analyzed` result), `check.rs` (`run_check`),
+`report.rs` (`run_report`), `recommend.rs` (prompt/scorecard), and the `config/`
+module (`model` / `load` / `ignore` / `rules` / `violations`, re-exported through
+its `mod.rs` facade). `pipeline.rs` concentrates the high fan-out orchestration
+behind a single caller (`analyze_input`), keeping every file's Henry-Kafura HK
+low.
+
 The shared analysis core (`analyze_input`, used by both `check` and `report`)
 either reads an embedded snapshot (`.json`/`.html` input — `analyze_from_snapshot`,
 which rejects `--plugin`/`--ignore` since there is nothing to analyze) or
-analyzes a directory (`analyze_directory`). For a directory it loads layered
-config (`config.rs` — code-split.toml / Cargo.toml metadata / CLI flags);
+analyzes a directory (`analyze_directory`, in `pipeline.rs`). For a directory it
+loads layered config (the `config/` module — code-split.toml / Cargo.toml
+metadata / CLI flags);
 resolves the plugin name (CLI `--plugin` → config `plugin` → marker
 auto-detect, all under `auto`); invokes the selected built-in plugin
 (`rust` / `python` / `javascript` / `typescript`) via `plugin::analyze`, getting
@@ -751,7 +762,8 @@ binding.
   (`check`, `report`; no default command). Both take a polymorphic positional
   `[input]` (directory → analyze; `.json`/`.html` snapshot → read) and accept
   `--baseline <snapshot>`.
-- **Location**: `crates/code-split-cli/src/main.rs`
+- **Location**: `crates/code-split-cli/src/` — `main.rs` dispatches to `cli`,
+  `analyze`, `pipeline`, `check`, `report`, `recommend`, and the `config` module.
 - **Output**: `report` writes a snapshot `.json` and/or an HTML viewer to the
   paths selected by `--output.<fmt>[.path]` (default
   `.code-split/{ts}-{git-hash-3}.{json,html}`); each `.path` is a name template
@@ -768,8 +780,8 @@ See [§3.7 Plugin System](#37-plugin-system).
 #### Report Generator (`cpt-code-split-interface-report-cli`)
 
 - **Technology**: built-in Rust renderer in `code-split-cli`
-- **Location**: `crates/code-split-cli/src/main.rs` (`run_report`,
-  `render_html_viewer`)
+- **Location**: `crates/code-split-cli/src/report.rs` (`run_report`) +
+  `code-split-viewer` (`render_html_viewer`)
 - **Template**: inline HTML string with all JS/CSS embedded; the snapshot data
   is embedded inline as `cs-baseline` / `cs-current` `<script>` tags. With
   `--baseline <snapshot>` the HTML is a baseline↔current diff named `…-diff.html`.
@@ -777,7 +789,7 @@ See [§3.7 Plugin System](#37-plugin-system).
 #### Check / Regression Gate (`cpt-code-split-interface-check-cli`)
 
 - **Technology**: built-in Rust linter in `code-split-cli`
-- **Location**: `crates/code-split-cli/src/main.rs` (`run_check`,
+- **Location**: `crates/code-split-cli/src/check.rs` (`run_check`,
   `emit_diagnostics`)
 - **Output**: diagnostics in `--output-format human|json|github|sarif` plus an
   exit code. With `--baseline <snapshot>` the gate is relative (fails only on new
