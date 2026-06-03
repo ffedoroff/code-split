@@ -3,7 +3,7 @@
 //! average (matching the historical behavior); a metric is emitted only when
 //! its average is positive.
 
-use crate::{attr_f64, is_external, num_attr};
+use crate::attrs::{attr_f64, is_external, num_attr};
 use code_split_plugin_api::{AttrValue, Graph};
 use std::collections::BTreeMap;
 

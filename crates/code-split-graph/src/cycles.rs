@@ -3,7 +3,7 @@
 //! kinds like `contains` are excluded, so a `mod foo;` parent/child pair is not
 //! flagged as a false cycle.
 
-use crate::CycleGroup;
+use crate::snapshot::CycleGroup;
 use code_split_plugin_api::{AttrValue, Graph};
 use std::collections::HashMap;
 use std::collections::HashSet;

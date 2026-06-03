@@ -4,7 +4,7 @@
 //! `hk = sloc · (fan_in · fan_out)²`. Results are written into node `attrs` as
 //! flat keys; zero values are omitted.
 
-use crate::{attr_f64, is_external, num_attr};
+use crate::attrs::{attr_f64, is_external, num_attr};
 use code_split_plugin_api::{AttrValue, Graph, NodeId};
 use std::collections::{HashMap, HashSet};
 

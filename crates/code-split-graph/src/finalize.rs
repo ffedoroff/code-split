@@ -6,7 +6,7 @@
 use code_split_plugin_api::Graph;
 use std::collections::HashSet;
 
-use crate::is_external;
+use crate::attrs::is_external;
 
 pub fn finalize_graph(graph: &mut Graph) {
     let mut seen: HashSet<(String, String, String)> = HashSet::new();

@@ -298,10 +298,18 @@ Modules:
   `serde_json::Value` (a `BTreeMap`, so keys come out alphabetical) and sorts
   `nodes` by `id` and `edges` by `source`/`target`/`kind`, byte-stable for
   unchanged input.
-- **`lib.rs`** — `coupling_specs()` (the coupling/cycle `AttributeSpec`s + the
-  `coupling` group, merged in by the orchestrator) and the shared `round_sig3` /
-  `num_attr` numeric helpers. (There is no server-side snapshot-diff module —
-  `--baseline` diffing is done browser-side by the viewer's `diff.js`.)
+- **`attrs.rs`** — the shared attribute helpers every enrichment pass pulls in:
+  `round_sig3` / `num_attr` (numeric rounding + the `f64 → AttrValue` bridge) and
+  the `attr_f64` / `is_external` reads/predicate. A **leaf** module that depends
+  only on the plugin API, never on the crate root — so the passes import helpers
+  from here instead of `use crate::…`, which would otherwise close a
+  `submodule → lib.rs → submodule` dependency cycle.
+- **`lib.rs`** — a pure aggregator: `coupling_specs()` (the coupling/cycle
+  `AttributeSpec`s + the `coupling` group, merged in by the orchestrator) and the
+  downward re-exports (`attrs`, `cycles`, `finalize`, `hk`, `snapshot`, `stats`),
+  including `pub use attrs::{num_attr, round_sig3}` for the crate's public API. It
+  is never imported by its own submodules. (There is no server-side snapshot-diff
+  module — `--baseline` diffing is done browser-side by the viewer's `diff.js`.)
 
 #### code-split-plugin-api
 
