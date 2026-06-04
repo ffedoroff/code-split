@@ -6,7 +6,7 @@ use crate::cli::AnalyzeArgs;
 use crate::config;
 use crate::pipeline::{Analyzed, analyze_directory};
 use anyhow::{Context, Result};
-use code_split_graph::snapshot::Snapshot;
+use code_split_graph::snapshot::{SCHEMA_VERSION, Snapshot};
 use std::path::Path;
 
 /// Does this input path denote a snapshot artifact (read directly) rather than a
@@ -98,15 +98,38 @@ pub(crate) fn load_snapshot_any(path: &Path) -> Result<Snapshot> {
     }
     let text =
         std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-    code_split_viewer::extract_embedded_snapshot(&text, "cs-current")
+    let snap = code_split_viewer::extract_embedded_snapshot(&text, "cs-current")
         .or_else(|| code_split_viewer::extract_embedded_snapshot(&text, "cs-baseline"))
-        .with_context(|| format!("no embedded snapshot found in {}", path.display()))?
+        .with_context(|| format!("no embedded snapshot found in {}", path.display()))??;
+    ensure_schema(&snap.schema_version, path)?;
+    Ok(snap)
 }
 
 fn load_snapshot(path: &Path) -> Result<Snapshot> {
     let bytes =
         std::fs::read(path).with_context(|| format!("reading snapshot {}", path.display()))?;
-    serde_json::from_slice(&bytes).with_context(|| format!("parsing snapshot {}", path.display()))
+    // Check the schema version on the raw value first, so an incompatible
+    // snapshot fails with a clear version error rather than an opaque
+    // deserialization error about a moved/renamed field.
+    let value: serde_json::Value = serde_json::from_slice(&bytes)
+        .with_context(|| format!("parsing snapshot {}", path.display()))?;
+    let version = value.get("schema_version").and_then(|v| v.as_str()).unwrap_or("");
+    ensure_schema(version, path)?;
+    serde_json::from_value(value).with_context(|| format!("parsing snapshot {}", path.display()))
+}
+
+/// Reject a snapshot whose `schema_version` this build cannot read (e.g. a
+/// `--baseline` produced by an older/newer code-split). A structured error, so
+/// `check`'s exit code distinguishes it from a passing gate.
+fn ensure_schema(version: &str, path: &Path) -> Result<()> {
+    if version != SCHEMA_VERSION {
+        anyhow::bail!(
+            "snapshot {} has schema_version {version:?}, but this build reads version {SCHEMA_VERSION:?}; \
+             regenerate it with `code-split report`",
+            path.display()
+        );
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -174,5 +197,19 @@ mod tests {
             "rust",
             "from embedded .html"
         );
+    }
+
+    #[test]
+    fn load_snapshot_rejects_schema_version_mismatch() {
+        let d = tempfile::tempdir().unwrap();
+        let jp = d.path().join("old.json");
+        // A snapshot tagged with a different schema version must be rejected
+        // with a structured error (not silently mis-parsed).
+        let mut v = serde_json::to_value(mk_snap()).unwrap();
+        v["schema_version"] = serde_json::Value::String("1".into());
+        fs::write(&jp, serde_json::to_string(&v).unwrap()).unwrap();
+        let err = format!("{:#}", load_snapshot_any(&jp).unwrap_err());
+        assert!(err.contains("schema_version"), "schema error: {err}");
+        assert!(err.contains("\"1\""), "names the offending version: {err}");
     }
 }

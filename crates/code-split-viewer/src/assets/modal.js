@@ -156,6 +156,23 @@ function setModalDiagram(html) {
   hints.id = 'node-modal-hints';
   hints.innerHTML = window.kbdHintsHtml?.() ?? '';
   d.appendChild(hints);
+  centerDiagramNode(d);
+}
+
+// Scroll the diagram so the central (main) node sits at the vertical centre of
+// the viewport. The width-fit SVG may be taller than the panel; this anchors the
+// view on the node, with the fan-in tier above and fan-out below reachable by
+// scroll. Runs after layout (next frame) so the rendered height is known.
+function centerDiagramNode(d) {
+  requestAnimationFrame(() => {
+    const svg = d.querySelector('svg');
+    const frac = svg && parseFloat(svg.dataset.nodeCy || '');
+    if (!svg || !isFinite(frac)) return;
+    const svgRect  = svg.getBoundingClientRect();
+    const contRect = d.getBoundingClientRect();
+    const nodeInContent = (svgRect.top - contRect.top) + d.scrollTop + frac * svgRect.height;
+    d.scrollTop = Math.max(0, nodeInContent - d.clientHeight / 2);
+  });
 }
 window.setModalDiagram = setModalDiagram;
 

@@ -13,6 +13,9 @@ pub mod attrs;
 pub mod cycles;
 pub mod finalize;
 pub mod hk;
+pub mod level_graph;
+pub mod relativize;
+pub mod serialize;
 pub mod snapshot;
 pub mod stats;
 

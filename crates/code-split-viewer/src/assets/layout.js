@@ -92,7 +92,10 @@ function buildDOT(nodes, edges, level) {
   nodes.forEach(n => { const d = dirOf(n); (dirs.get(d) || dirs.set(d, []).get(d)).push(n); });
   let i = 0;
   for (const [dir, ns] of dirs) {
-    const label = dir.split('/').slice(-2).join('/');
+    // Full project-relative directory path (the `{root}/` token already stripped
+    // in dirOf), so nested folders like `crates/code-split-cli/src/config` are
+    // unambiguous instead of a truncated `src/config`.
+    const label = dir;
     dot += `  subgraph cluster_${i++} {\n`;
     dot += `    label=${dotId(label)} color="#cccccc" fontcolor="#666666"\n`;
     for (const n of ns) dot += `    ${dotId(n.id)} [${nAttr(n)}]\n`;

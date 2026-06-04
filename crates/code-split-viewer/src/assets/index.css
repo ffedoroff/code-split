@@ -151,7 +151,10 @@ main { padding: 16px 24px 40px; }
 #node-modal-main { display: flex; flex: 1; overflow: hidden; }
 #node-modal-body { overflow-y: auto; flex: 1; padding: 0 28px 24px; border-right: 1px solid #eee; }
 #node-modal-diagram { flex: 2; display: flex; align-items: center; justify-content: center;
-                      padding: 32px; background: #f8fafc; overflow: hidden; position: relative; }
+                      padding: 32px; background: #f8fafc; overflow-y: auto; overflow-x: hidden; position: relative; }
+/* `margin:auto` (not align-items) centres a short diagram yet keeps a tall one
+   fully reachable when it overflows and scrolls. */
+#node-modal-diagram > svg { margin: auto; }
 .nm-title { font-size: 18px; font-weight: 700; color: #2c3e50;
             overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nm-badge { display: inline-block; flex-shrink: 0; padding: 2px 10px; border-radius: 12px;

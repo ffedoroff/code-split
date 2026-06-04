@@ -2,7 +2,7 @@
 //! catalog used by diagnostics.
 
 use super::model::CycleRules;
-use code_split_graph::snapshot::CycleGroup;
+use code_split_graph::level_graph::CycleGroup;
 use code_split_plugin_api::{attrs::AttrValue, node::Node};
 use std::collections::HashSet;
 

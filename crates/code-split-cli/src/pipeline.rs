@@ -6,7 +6,8 @@
 use crate::cli::AnalyzeArgs;
 use crate::{config, git, logger, plugin, presets};
 use anyhow::{Context, Result};
-use code_split_graph::snapshot::{LevelGraph, LevelUi, Snapshot};
+use code_split_graph::level_graph::{LevelGraph, LevelUi};
+use code_split_graph::snapshot::Snapshot;
 use code_split_plugin_api::plugin::PluginInput;
 use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
@@ -89,7 +90,7 @@ pub(crate) fn analyze_directory(
     code_split_graph::finalize::finalize_graph(&mut graph);
     let mut roots = detect_roots();
     roots.insert("target".to_string(), target.display().to_string());
-    code_split_graph::snapshot::relativize_graph(&mut graph, &target, &roots);
+    code_split_graph::relativize::relativize_graph(&mut graph, &target, &roots);
 
     // 4. Apply ignore filters (tokenized ids), then compute the derived data.
     config::apply_ignore(&mut graph, &cfg.ignore, &target)?;
@@ -175,7 +176,7 @@ fn flow_kinds(level: Option<&code_split_plugin_api::level::Level>) -> HashSet<St
 fn assemble_level(
     level_spec: Option<code_split_plugin_api::level::Level>,
     graph: code_split_plugin_api::graph::Graph,
-    cycles: Vec<code_split_graph::snapshot::CycleGroup>,
+    cycles: Vec<code_split_graph::level_graph::CycleGroup>,
     stats: BTreeMap<String, code_split_plugin_api::attrs::AttrValue>,
     thresholds: BTreeMap<String, code_split_plugin_api::level::Thresholds>,
 ) -> LevelGraph {

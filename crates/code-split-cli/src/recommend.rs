@@ -9,7 +9,7 @@
 //! `node_attributes[*].thresholds` (the `info` / `warning` tiers) — never a gate.
 
 use anyhow::{Result, bail};
-use code_split_graph::snapshot::LevelGraph;
+use code_split_graph::level_graph::LevelGraph;
 use code_split_plugin_api::{attrs::AttrValue, level::Thresholds, node::Node, plugin::Preset};
 
 /// Which threshold tier drives an output. `Auto` resolves to `Warning` when any

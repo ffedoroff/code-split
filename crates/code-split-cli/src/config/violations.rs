@@ -4,7 +4,7 @@
 use super::ignore::is_external;
 use super::model::{MetricThresholds, RulesConfig};
 use super::rules::rule_doc;
-use code_split_graph::snapshot::LevelGraph;
+use code_split_graph::level_graph::LevelGraph;
 use code_split_plugin_api::{attrs::AttrValue, node::Node};
 use std::collections::{BTreeMap, HashMap};
 
@@ -213,7 +213,7 @@ fn push(
 mod tests {
     use super::*;
     use crate::config::model::CycleRule;
-    use code_split_graph::snapshot::CycleGroup;
+    use code_split_graph::level_graph::CycleGroup;
 
     fn file_node(id: &str, attrs: &[(&str, AttrValue)]) -> Node {
         let mut n = Node {

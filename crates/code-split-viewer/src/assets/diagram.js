@@ -88,34 +88,54 @@ function buildDiagramSVG(node, level) {
   const PAD_BOT     = 14;
   const ARR_GAP     = 36;
   const SIDE_PAD    = 20;
-  const MAX_ITEMS   = 24;
-  const MAX_COL_CARDS = 6;             // cards per row before wrapping to a new row
+  const MAX_TIER_COLS = 5;             // total columns across a tier's groups; overflow scrolls
   const MARG        = 20;
   const MNW_MIN     = 3 * CELL - 12 + 2 * COL_PAD_X;  // ≈ 492 minimum main-node width
 
-  // Build column descriptors for one direction: one internal-connections column
-  // plus (when present) a separate grey `external` column on the same tier.
-  const buildCols = ({ internal, external }) => {
-    const specs = [];
-    if (internal.length) specs.push({ kind: 'connections', all: internal, ext: false });
-    if (external.length) specs.push({ kind: 'external',    all: external, ext: true  });
-    const raw = specs.map(({ kind, all, ext }) => {
-      const items = all.slice(0, MAX_ITEMS);
-      const extra = all.length - items.length;
-      return { kind, all, items, extra, count: items.length, ext };
-    }).filter(c => c.count > 0);
+  // Split a column budget across groups proportionally to their card counts,
+  // each group getting 1..count columns and the sum capped at min(budget, total).
+  const allocCols = (counts, budget) => {
+    const total = counts.reduce((a, b) => a + b, 0);
+    const cap   = Math.min(budget, total);
+    const alloc = counts.map(n => Math.max(1, Math.min(n, Math.round(cap * n / total))));
+    let sum = alloc.reduce((a, b) => a + b, 0);
+    // Trim overshoot from the group with the most columns (keeping ≥1).
+    while (sum > cap) {
+      let idx = -1, best = 1;
+      alloc.forEach((c, i) => { if (c > best) { best = c; idx = i; } });
+      if (idx < 0) break;
+      alloc[idx]--; sum--;
+    }
+    // Spend any slack on the group with the most cards that still has room.
+    while (sum < cap) {
+      let idx = -1, best = -1;
+      alloc.forEach((c, i) => { if (c < counts[i] && counts[i] > best) { best = counts[i]; idx = i; } });
+      if (idx < 0) break;
+      alloc[idx]++; sum++;
+    }
+    return alloc;
+  };
 
+  // Build column descriptors for one direction: one internal-connections column
+  // plus (when present) a separate grey `external` column on the same tier. The
+  // two groups SHARE a ≤ MAX_TIER_COLS column budget (split by card count); rows
+  // beyond what fits are not truncated — the diagram scrolls.
+  const buildCols = ({ internal, external }) => {
+    const raw = [];
+    if (internal.length) raw.push({ kind: 'connections', all: internal, items: internal, count: internal.length, ext: false });
+    if (external.length) raw.push({ kind: 'external',    all: external, items: external, count: external.length, ext: true  });
     if (raw.length === 0) return raw;
 
-    for (const c of raw) {
-      c.cardW = Math.min(MAX_COL_CARDS, c.count);
+    const widths = allocCols(raw.map(c => c.count), MAX_TIER_COLS);
+    raw.forEach((c, i) => {
+      c.cardW = widths[i];
       c.px_w  = c.cardW * CELL - 12 + 2 * COL_PAD_X;
       const rows = [];
-      for (let i = 0; i < c.items.length; i += c.cardW)
-        rows.push(c.items.slice(i, i + c.cardW));
+      for (let j = 0; j < c.items.length; j += c.cardW)
+        rows.push(c.items.slice(j, j + c.cardW));
       c.rows = rows;
       c.h    = PAD_TOP + rows.length * ROW_H - (ROW_H - SNH) + PAD_BOT;
-    }
+    });
     return raw;
   };
 
@@ -177,7 +197,12 @@ function buildDiagramSVG(node, level) {
       : cs === 'before-only';   // before, or review (single snapshot)
   };
 
-  let s = `<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 ${VW} ${VH}" preserveAspectRatio="xMidYMid meet">`;
+  // Fit to the panel WIDTH (never upscale past natural size); height follows the
+  // viewBox aspect, so a tall stack overflows and the container scrolls. The
+  // `data-node-cy` fraction (main-node vertical centre ÷ VH) lets the modal
+  // scroll the central node to the middle of the viewport on open.
+  const nodeCyFrac = (MNY + MNH2 / 2) / VH;
+  let s = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${VW} ${VH}" data-node-cy="${nodeCyFrac.toFixed(5)}" style="display:block;width:100%;max-width:${VW}px;height:auto;margin:auto">`;
   s += `<defs>` +
     `<marker id="ah" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3z" fill="#4d6f9c"/></marker>` +
     `<marker id="ah-ext" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3z" fill="#9aa0a6"/></marker>` +
@@ -292,7 +317,7 @@ function buildDiagramSVG(node, level) {
     let r = '';
     r += `<rect x="${col.x}" y="${col.y}" width="${col.px_w}" height="${col.h}" rx="8" fill="none" stroke="${color}" stroke-width="1.5" stroke-dasharray="${dash}"/>`;
     if (col.ext) {
-      const label = `external  ${col.all.length}${col.extra > 0 ? ` (+${col.extra})` : ''}`;
+      const label = `external  ${col.all.length}`;
       r += `<text x="${col.x+10}" y="${col.y+13}" font-family="system-ui,sans-serif" font-size="10" fill="${color}" font-weight="600">${label}</text>`;
     }
     col.rows.forEach((row, ri) =>
@@ -319,14 +344,19 @@ function buildDiagramSVG(node, level) {
 
   // Main node
   const mono = `font-family="ui-monospace,'SF Mono','Fira Code',monospace"`;
-  const mnValTrunc = (label, v) => trunc(v, Math.max(4, Math.floor((MNW - 20 - label.length * 7.2) / 7.2)));
+  // Monospace char width ≈ 0.6 × font-size; the key/value rows render at 14px.
+  const mnValTrunc = (label, v) => trunc(v, Math.max(4, Math.floor((MNW - 20 - label.length * 8.4) / 8.4)));
   const mnCycle = isCycleNode(node.id);
   const mnExt   = isExternalNode(node, level);
   const mnFill   = mnExt ? '#ececec' : '#dbe9f4';
   const mnStroke = mnCycle ? '#c00' : mnExt ? '#9aa0a6' : '#4d6f9c';
-  // For project files strip the leading root token to get the repo-relative path.
-  const nodePath = (node.path || '').replace(/^\{[^}]+\}\//, '');
+  // For project files the id IS the relativized path (a `path` attr is dropped
+  // when it equals the id), so fall back to the id; then strip the leading root
+  // token to get the repo-relative path.
+  const nodePath = (node.path || node.id || '').replace(/^\{[^}]+\}\//, '');
   const copyVal = mnExt ? node.id : nodePath;
+  // Absolute on-disk path (token expanded) for the path tooltip.
+  const absFull = absPath(mnExt ? (node.path || node.id) : node.id);
   const mnCls = [mnExt ? 'diag-ext' : (selectedIds?.has(node.id) ? 'diag-selected' : ''),
                  mnCycle ? 'diag-cycle' : ''].filter(Boolean).join(' ');
   s += `<g class="mn-card${mnCls ? ' ' + mnCls : ''}" data-node-id="${esc(node.id)}" data-copy="${esc(copyVal)}">`;
@@ -341,18 +371,18 @@ function buildDiagramSVG(node, level) {
     s += `<text ${mono} x="${MNX+MNW/2}" y="${MNY+28}" text-anchor="middle" font-size="16" font-weight="700" fill="#1a2f45">${esc(trunc(extName, 36))}</text>`;
     // Always show kind.
     const kindDesc = nodeKindSpec(level, node.kind).label || node.kind || 'external';
-    s += `<text class="sn-hint" data-tip-title="${escA(attrLabel(level, 'external'))}" data-tip="${escA(attrDesc(level, 'external'))}" ${mono} x="${MNX+14}" y="${ey}" font-size="11" fill="#2c3e50"><tspan font-weight="700">kind: </tspan>${esc(node.kind || 'external')}</text>`;
+    s += `<text class="sn-hint" data-tip-title="${escA(attrLabel(level, 'external'))}" data-tip="${escA(attrDesc(level, 'external'))}" ${mono} x="${MNX+14}" y="${ey}" font-size="14" fill="#2c3e50"><tspan font-weight="700">kind: </tspan>${esc(node.kind || 'external')}</text>`;
     if (node.version != null) {
       ey += 22;
       const vDesc = attrDesc(level, 'version');
       const vTip  = vDesc ? ` class="sn-hint" data-tip-title="${escA(attrLabel(level, 'version'))}" data-tip="${escA(vDesc)}"` : '';
-      s += `<text${vTip} ${mono} x="${MNX+14}" y="${ey}" font-size="11" fill="#2c3e50"><tspan font-weight="700">version: </tspan>${esc(node.version)}</text>`;
+      s += `<text${vTip} ${mono} x="${MNX+14}" y="${ey}" font-size="14" fill="#2c3e50"><tspan font-weight="700">version: </tspan>${esc(node.version)}</text>`;
     }
     if (node.path) {
       ey += 22;
-      const pDesc = attrDesc(level, 'path');
-      const pTip  = pDesc ? ` class="sn-hint" data-tip-title="${escA(attrLabel(level, 'path'))}" data-tip="${escA(pDesc)}"` : '';
-      s += `<text${pTip} ${mono} x="${MNX+14}" y="${ey}" font-size="11" fill="#2c3e50"><tspan font-weight="700">path: </tspan>${esc(mnValTrunc('path: ', node.path))}</text>`;
+      // Card keeps the compact `{registry}`/`{cargo}` token form; the tooltip
+      // shows the expanded on-disk location.
+      s += `<text class="sn-hint" data-tip-title="${escA(attrLabel(level, 'path') || 'Path')}" data-tip="${escA(absFull || node.path)}" ${mono} x="${MNX+14}" y="${ey}" font-size="14" fill="#2c3e50"><tspan font-weight="700">path: </tspan>${esc(mnValTrunc('path: ', node.path))}</text>`;
     }
   } else {
     s += `<text ${mono} x="${MNX+MNW/2}" y="${MNY+28}" text-anchor="middle" font-size="16" font-weight="700" fill="#1a2f45">${esc(trunc(node.name||node.id, 36))}</text>`;
@@ -361,11 +391,12 @@ function buildDiagramSVG(node, level) {
       ? node.visibility : null;
     let my = MNY + 58;
     if (visStr) {
-      s += `<text ${mono} x="${MNX+14}" y="${my}" font-size="11" fill="#2c3e50"><tspan font-weight="700">visibility: </tspan>${esc(visStr)}</text>`;
+      s += `<text ${mono} x="${MNX+14}" y="${my}" font-size="14" fill="#2c3e50"><tspan font-weight="700">visibility: </tspan>${esc(visStr)}</text>`;
       my += 22;
     }
-    const pathDesc = attrDesc(level, 'path') || 'Path of this file, relative to the analyzed project root.';
-    s += `<text class="sn-hint" data-tip-title="${escA(attrLabel(level, 'path'))}" data-tip="${escA(pathDesc)}" ${mono} x="${MNX+14}" y="${my}" font-size="11" fill="#2c3e50"><tspan font-weight="700">path: </tspan>${esc(mnValTrunc('path: ', nodePath))}</text>`;
+    // Tooltip shows the absolute on-disk path (the displayed value is the
+    // project-relative, truncated path).
+    s += `<text class="sn-hint" data-tip-title="${escA(attrLabel(level, 'path') || 'Path')}" data-tip="${escA(absFull || nodePath)}" ${mono} x="${MNX+14}" y="${my}" font-size="14" fill="#2c3e50"><tspan font-weight="700">path: </tspan>${esc(mnValTrunc('path: ', nodePath))}</text>`;
     my += 22;
 
     // Primary card metric row
@@ -377,7 +408,7 @@ function buildDiagramSVG(node, level) {
       const tipDesc    = escA(attrDesc(level, primaryKey));
       const tipFormula = attrFormula(level, primaryKey) ? ` data-tip-formula="${escA(attrFormula(level, primaryKey))}"` : '';
       const tipCalc    = calcDisplay(level, primaryKey, node) ? ` data-tip-calc="${escA(calcDisplay(level, primaryKey, node))}"` : '';
-      s += `<text class="sn-hint" data-tip-title="${tipTitle}" data-tip="${tipDesc}"${tipFormula}${tipCalc} ${mono} x="${MNX+14}" y="${my}" font-size="11" fill="#2c3e50"><tspan font-weight="700">${esc(primName)}: </tspan>${esc(primFmt)}</text>`;
+      s += `<text class="sn-hint" data-tip-title="${tipTitle}" data-tip="${tipDesc}"${tipFormula}${tipCalc} ${mono} x="${MNX+14}" y="${my}" font-size="14" fill="#2c3e50"><tspan font-weight="700">${esc(primName)}: </tspan>${esc(primFmt)}</text>`;
       my += 22;
     }
 
@@ -388,7 +419,7 @@ function buildDiagramSVG(node, level) {
       const secName = attrShort(level, secondaryKey).toLowerCase();
       const tipTitle = escA(attrName(level, secondaryKey));
       const tipDesc  = escA(attrDesc(level, secondaryKey));
-      s += `<text class="sn-hint" data-tip-title="${tipTitle}" data-tip="${tipDesc}" ${mono} x="${MNX+14}" y="${my}" font-size="11" fill="#2c3e50"><tspan font-weight="700">${esc(secName)}: </tspan>${esc(secFmt)}</text>`;
+      s += `<text class="sn-hint" data-tip-title="${tipTitle}" data-tip="${tipDesc}" ${mono} x="${MNX+14}" y="${my}" font-size="14" fill="#2c3e50"><tspan font-weight="700">${esc(secName)}: </tspan>${esc(secFmt)}</text>`;
     }
   }
   s += `</g>`;
@@ -458,14 +489,31 @@ function nodeSourceUrl(node, level) {
 // Expose on window so modal.js can use it from click handlers.
 window.nodeSourceUrl = nodeSourceUrl;
 
+// Reconstruct the absolute on-disk path from a relativized id/path: replace the
+// leading `{token}/` with the snapshot's real root — `{target}` → the analyzed
+// project dir, a named root (`{registry}` …) → `roots[token]`. Returns the input
+// unchanged when there is no token or the root is unknown. Used for the path
+// tooltip in the node popup.
+function absPath(idOrPath) {
+  const snap = activeSnap();
+  const m = /^\{([^}]+)\}\/(.*)$/.exec(idOrPath || '');
+  if (!snap || !m) return idOrPath || '';
+  const base = m[1] === 'target' ? (snap.target ?? snap.roots?.target) : snap.roots?.[m[1]];
+  return base ? `${base}/${m[2]}` : (idOrPath || '');
+}
+
 function buildModalContent(node, level) {
   const cycles  = window.CYCLES?.[level];
   const cs      = cycles?.nodeCycleStatus?.get(node.id);
   const mnExt   = isExternalNode(node, level);
-  // For external nodes keep the full prefix (shows the source); for project
-  // files drop the leading root token.
-  const path    = mnExt ? (node.path || '')
-                        : (node.path || '').replace(/^\{[^}]+\}\//, '');
+  // Displayed path: external keeps its compact `{registry}`/`{cargo}` token
+  // form; for project files the id IS the relativized path (the `path` attr is
+  // dropped when equal to the id), so fall back to the id, then drop the leading
+  // root token to get the repo-relative path.
+  const path    = mnExt ? (node.path || node.id || '')
+                        : (node.path || node.id || '').replace(/^\{[^}]+\}\//, '');
+  // Absolute on-disk path (token expanded) for the Path-row tooltip.
+  const absFull = absPath(mnExt ? (node.path || node.id) : node.id);
   const vis     = typeof node.visibility === 'string' ? node.visibility : null;
 
   // sections: array of { label: string|null, rows: string[] }
@@ -525,7 +573,7 @@ function buildModalContent(node, level) {
     rawRow('Path',
       `${dir}<strong>${file}</strong>`,
       attrName(level, 'path') || 'Path',
-      attrDesc(level, 'path') || 'Location of this node.'
+      absFull || attrDesc(level, 'path') || 'Location of this node.'
     );
     // Source link for project files (not for external nodes).
     if (!mnExt) {

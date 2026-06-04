@@ -1294,7 +1294,7 @@ as a self-contained HTML report.
 - [x] All P1 tools operate with zero outbound network calls
 - [x] Generated HTML reports contain no external resource references
 - [x] JSON artifacts conform to the Graph JSON Schema (`schema_version: "2"`)
-- [ ] A `--baseline` comparison exits non-zero with a structured error on
+- [x] A `--baseline` comparison exits non-zero with a structured error on
   schema version mismatch
 
 ## 10. Dependencies

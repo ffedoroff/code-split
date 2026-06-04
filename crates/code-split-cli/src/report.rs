@@ -99,7 +99,7 @@ pub(crate) fn run_report(
             .or(a.output.json.path.as_deref())
             .unwrap_or(DEFAULT_JSON_PATH);
         let dest = render_name(tpl, &target, commit);
-        let mut json = code_split_graph::snapshot::to_canonical_string_pretty(snap)?;
+        let mut json = code_split_graph::serialize::to_canonical_string_pretty(snap)?;
         json.push('\n');
         write_artifact(&dest, &json, "json")?;
     }

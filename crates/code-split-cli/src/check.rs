@@ -6,7 +6,7 @@ use crate::analyze::{analyze_input, load_snapshot_any, project_name};
 use crate::cli::{AnalyzeArgs, OutputFormat};
 use crate::config;
 use anyhow::Result;
-use code_split_graph::snapshot::LevelGraph;
+use code_split_graph::level_graph::LevelGraph;
 use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
 
