@@ -1,11 +1,11 @@
 {
   "command": "code-split report crates/code-split-plugin-rust/sample --config crates/code-split-plugin-rust/sample/code-split.toml --output.json.path crates/code-split-plugin-rust/sample/code-split-report.json",
   "config_file": "crates/code-split-plugin-rust/sample/code-split.toml",
-  "generated_at": "2026-06-04T13:11:20.020750Z",
+  "generated_at": "2026-06-04T14:03:37.892278Z",
   "git": {
     "branch": "refactor/generic-model-cli",
-    "commit": "45ea25a23bdb",
-    "dirty_files": 17,
+    "commit": "973b03e75b7a",
+    "dirty_files": 6,
     "origin": "git@github.com:ffedoroff/code-split.git"
   },
   "graphs": {
@@ -60,8 +60,8 @@
           "label": "contains"
         },
         "reexports": {
-          "description": "Re-export (pub use) — re-exposes the other file's items as part of its own API.",
-          "flow": true,
+          "description": "Re-export (pub use) — re-exposes the other file's items as part of its own API. A facade, not a dependency: kept in the JSON but not drawn and excluded from fan-in / HK / cycles (the `pub use` info still drives use-resolution to the defining file).",
+          "flow": false,
           "label": "reexport"
         },
         "uses": {
@@ -944,12 +944,12 @@
   "timings": [
     {
       "detail": "14 nodes from 12 files",
-      "ms": 76,
+      "ms": 77,
       "stage": "rust"
     },
     {
       "detail": "12 nodes annotated",
-      "ms": 10,
+      "ms": 9,
       "stage": "complexity"
     },
     {

@@ -15,10 +15,12 @@ pub(crate) fn contribute(metadata: &Metadata, builder: &mut GraphBuilder) -> Res
     // cross-crate resolution needs the *other* crates' module indexes, so every
     // node must already exist.
     let mut works: Vec<TargetWork> = Vec::new();
-    // Each local crate's library module index, keyed by its package repr, so a
-    // `use other_crate::sub::Item` can resolve to the submodule file that owns
-    // `Item` instead of collapsing onto the crate root.
-    let mut lib_index: HashMap<String, HashMap<Vec<String>, NodeId>> = HashMap::new();
+    // Each local crate's library (module index + `pub use` re-export table),
+    // keyed by its package repr, so a `use other_crate::sub::Item` resolves to
+    // the submodule file that owns `Item` — and a `use other_crate::ReExported`
+    // follows that crate's `pub use` chain to the defining file — instead of
+    // collapsing onto the crate root.
+    let mut lib_index: HashMap<String, ForeignLib> = HashMap::new();
 
     for pkg in &metadata.packages {
         if !local.contains(&pkg.id) {
@@ -78,7 +80,13 @@ pub(crate) fn contribute(metadata: &Metadata, builder: &mut GraphBuilder) -> Res
             // from another crate resolves into; a bin target is not addressable
             // by name, so only libs feed the workspace index.
             if is_lib_target(target) {
-                lib_index.insert(pkg.id.repr.clone(), module_index.clone());
+                lib_index.insert(
+                    pkg.id.repr.clone(),
+                    ForeignLib {
+                        index: module_index.clone(),
+                        reexports: build_reexports(&pending_uses),
+                    },
+                );
             }
             works.push(TargetWork {
                 extern_crates: extern_crates.clone(),
@@ -502,6 +510,16 @@ type ReexportMap = HashMap<Vec<String>, Vec<(String, Vec<String>)>>;
 /// Depth guard for following re-export chains (`pub use a::X` → `pub use b::X` …).
 const MAX_REEXPORT_DEPTH: usize = 8;
 
+/// A foreign workspace crate's library, for submodule-precise cross-crate `use`
+/// resolution: its module index plus its `pub use` re-export table, so
+/// `other_crate::Symbol` resolves to the file that *defines* `Symbol` (following
+/// the crate's `pub use` chain) rather than collapsing onto its crate root.
+#[derive(Default)]
+struct ForeignLib {
+    index: HashMap<Vec<String>, NodeId>,
+    reexports: ReexportMap,
+}
+
 fn build_reexports(pending: &[PendingUse]) -> ReexportMap {
     let mut map: ReexportMap = HashMap::new();
     for pu in pending {
@@ -522,7 +540,7 @@ fn emit_uses(
     module_index: &HashMap<Vec<String>, NodeId>,
     extern_crates: &HashMap<String, NodeId>,
     dep_pkg_by_name: &HashMap<String, String>,
-    lib_index: &HashMap<String, HashMap<Vec<String>, NodeId>>,
+    lib_index: &HashMap<String, ForeignLib>,
     builder: &mut GraphBuilder,
 ) {
     let reexports = build_reexports(pending);
@@ -572,7 +590,7 @@ fn resolve_use_path(
     module_index: &HashMap<Vec<String>, NodeId>,
     extern_crates: &HashMap<String, NodeId>,
     dep_pkg_by_name: &HashMap<String, String>,
-    lib_index: &HashMap<String, HashMap<Vec<String>, NodeId>>,
+    lib_index: &HashMap<String, ForeignLib>,
     reexports: &ReexportMap,
     depth: usize,
 ) -> Option<NodeId> {
@@ -639,13 +657,15 @@ fn resolve_use_path(
                 );
             }
             // Cross-crate into another local workspace crate: walk the rest of
-            // the path through that crate's library module index, so the edge
-            // lands on the submodule file that owns the item (falling back to
-            // the crate root when the path stops at a non-module item).
+            // the path through that crate's library, following its `pub use`
+            // re-exports so the edge lands on the file that owns the item
+            // (a re-exported `other_crate::Symbol` → its defining file, not the
+            // crate root; a path stopping at a non-module, non-re-exported item
+            // still falls back to the crate root).
             if let Some(dep_repr) = dep_pkg_by_name.get(other)
                 && let Some(foreign) = lib_index.get(dep_repr)
             {
-                return walk_module_index(&[], rest, foreign);
+                return walk_foreign(&[], rest, &foreign.index, &foreign.reexports, 0);
             }
             // Registry dependency (or a local crate with no library target):
             // collapse onto the crate root node.
@@ -680,12 +700,79 @@ fn walk_detailed(
     Some((node, cur, consumed))
 }
 
-fn walk_module_index(
+/// Resolve `base ++ tail` within a **foreign** crate's library, following its
+/// `pub use` re-exports so a re-exported `other_crate::Symbol` lands on the file
+/// that defines `Symbol` rather than the foreign crate root. Self-contained: it
+/// consults only the foreign crate's index and re-export table (a foreign
+/// re-export of a *third* crate is left at the foreign module — a rare,
+/// acceptable degradation).
+fn walk_foreign(
     base: &[String],
     tail: &[String],
-    module_index: &HashMap<Vec<String>, NodeId>,
+    index: &HashMap<Vec<String>, NodeId>,
+    reexports: &ReexportMap,
+    depth: usize,
 ) -> Option<NodeId> {
-    walk_detailed(base, tail, module_index).map(|(node, _, _)| node)
+    let (node, stop_path, consumed) = walk_detailed(base, tail, index)?;
+    if consumed >= tail.len() {
+        return Some(node);
+    }
+    if depth < MAX_REEXPORT_DEPTH
+        && let Some(entries) = reexports.get(&stop_path)
+    {
+        let sym = &tail[consumed];
+        for (exported, source) in entries {
+            if exported == sym
+                && let Some(redirected) =
+                    resolve_foreign_source(source, &stop_path, index, reexports, depth + 1)
+                && redirected != node
+            {
+                return Some(redirected);
+            }
+        }
+    }
+    Some(node)
+}
+
+/// Resolve a `pub use` source path *within* a foreign crate (handles
+/// `crate` / `self` / `super` / submodule prefixes). Keyword/external paths
+/// yield `None`, so the caller keeps the facade module.
+fn resolve_foreign_source(
+    use_path: &[String],
+    current_path: &[String],
+    index: &HashMap<Vec<String>, NodeId>,
+    reexports: &ReexportMap,
+    depth: usize,
+) -> Option<NodeId> {
+    if use_path.is_empty() {
+        return None;
+    }
+    let first = use_path[0].as_str();
+    let rest = &use_path[1..];
+    match first {
+        "crate" => walk_foreign(&[], rest, index, reexports, depth),
+        "self" => walk_foreign(current_path, rest, index, reexports, depth),
+        "super" => {
+            let mut path = current_path.to_vec();
+            let mut tail = rest;
+            while tail.first().map(|s| s.as_str()) == Some("super") {
+                path.pop()?;
+                tail = &tail[1..];
+            }
+            path.pop()?;
+            walk_foreign(&path, tail, index, reexports, depth)
+        }
+        "std" | "core" | "alloc" | "proc_macro" | "test" => None,
+        _ => {
+            let mut probe = current_path.to_vec();
+            probe.push(first.to_string());
+            if index.contains_key(&probe) {
+                walk_foreign(current_path, use_path, index, reexports, depth)
+            } else {
+                None
+            }
+        }
+    }
 }
 
 /// Resolve a path within the owning crate's module tree, following `pub use`
@@ -698,7 +785,7 @@ fn resolve_in_index(
     module_index: &HashMap<Vec<String>, NodeId>,
     extern_crates: &HashMap<String, NodeId>,
     dep_pkg_by_name: &HashMap<String, String>,
-    lib_index: &HashMap<String, HashMap<Vec<String>, NodeId>>,
+    lib_index: &HashMap<String, ForeignLib>,
     reexports: &ReexportMap,
     depth: usize,
 ) -> Option<NodeId> {
@@ -1024,7 +1111,7 @@ mod tests {
         index.insert(vec!["commands".into()], "mod:commands".into());
         let externs: HashMap<String, NodeId> = HashMap::new();
         let no_deps: HashMap<String, String> = HashMap::new();
-        let no_libs: HashMap<String, HashMap<Vec<String>, NodeId>> = HashMap::new();
+        let no_libs: HashMap<String, ForeignLib> = HashMap::new();
         assert_eq!(
             resolve_use_path(
                 &["commands".into(), "run".into()],
@@ -1063,8 +1150,14 @@ mod tests {
         let mut foreign: HashMap<Vec<String>, NodeId> = HashMap::new();
         foreign.insert(vec![], "mod:api::lib".into());
         foreign.insert(vec!["node".into()], "mod:api::lib::node".into());
-        let mut lib_index: HashMap<String, HashMap<Vec<String>, NodeId>> = HashMap::new();
-        lib_index.insert("api 1.0".into(), foreign);
+        let mut lib_index: HashMap<String, ForeignLib> = HashMap::new();
+        lib_index.insert(
+            "api 1.0".into(),
+            ForeignLib {
+                index: foreign,
+                reexports: ReexportMap::new(),
+            },
+        );
 
         let mut dep_pkg_by_name: HashMap<String, String> = HashMap::new();
         dep_pkg_by_name.insert("api".into(), "api 1.0".into());
@@ -1101,6 +1194,69 @@ mod tests {
             )
             .as_deref(),
             Some("mod:api::lib")
+        );
+    }
+
+    #[test]
+    fn resolves_cross_crate_reexport_to_definer() {
+        // Foreign crate `sec`: its root re-exports `AccessScope` (defined in the
+        // `access_scope` submodule) via `pub use access_scope::AccessScope`.
+        let mut foreign: HashMap<Vec<String>, NodeId> = HashMap::new();
+        foreign.insert(vec![], "mod:sec::lib".into());
+        foreign.insert(
+            vec!["access_scope".into()],
+            "mod:sec::lib::access_scope".into(),
+        );
+        let mut rx = ReexportMap::new();
+        rx.insert(
+            vec![],
+            vec![(
+                "AccessScope".into(),
+                vec!["access_scope".into(), "AccessScope".into()],
+            )],
+        );
+        let mut lib_index: HashMap<String, ForeignLib> = HashMap::new();
+        lib_index.insert(
+            "sec 1.0".into(),
+            ForeignLib {
+                index: foreign,
+                reexports: rx,
+            },
+        );
+        let mut dep_pkg_by_name: HashMap<String, String> = HashMap::new();
+        dep_pkg_by_name.insert("sec".into(), "sec 1.0".into());
+        let mut externs: HashMap<String, NodeId> = HashMap::new();
+        externs.insert("sec".into(), "crate:sec".into());
+
+        // `use sec::AccessScope` → the defining file, not the facade crate root.
+        assert_eq!(
+            resolve_use_path(
+                &["sec".into(), "AccessScope".into()],
+                &[],
+                &HashMap::new(),
+                &externs,
+                &dep_pkg_by_name,
+                &lib_index,
+                &ReexportMap::new(),
+                0,
+            )
+            .as_deref(),
+            Some("mod:sec::lib::access_scope")
+        );
+        // A symbol the foreign crate does NOT re-export stays at the crate root.
+        assert_eq!(
+            resolve_use_path(
+                &["sec".into(), "NotReexported".into()],
+                &[],
+                &HashMap::new(),
+                &externs,
+                &dep_pkg_by_name,
+                &lib_index,
+                &ReexportMap::new(),
+                0,
+            )
+            .as_deref(),
+            Some("mod:sec::lib")
         );
     }
 

@@ -170,8 +170,9 @@ The model is a **generic property graph** (free-form node/edge `kind` +
 attribute maps), but today the snapshot carries exactly one level: **files**.
 Node kinds in output are `"file"` (a project source file, carrying all metrics)
 and `"external"` (a third-party library at depth 1 — one node per library, never
-expanded). Edge kinds are `uses` / `reexports` between files (information flow)
-and the structural `contains`; an edge is external iff its target is an
+expanded). The one **information-flow** edge kind is `uses` between files; the
+structural `contains` (module ownership) and `reexports` (a `pub use` facade) are
+recorded but non-flow — excluded from fan-in / HK / cycles and not drawn. An edge is external iff its target is an
 `external` node. There is no module, function, or call graph yet: plugins resolve
 everything to file→file dependencies before the snapshot is written. The `graphs`
 map and the per-level semantics dictionaries leave room for `module` / `function`
@@ -276,17 +277,16 @@ the orchestrator derives from the level's `EdgeKindSpec.flow`.
 
 Modules:
 
-- **`cycles.rs`** — `annotate_cycles(graph, cycle_kinds) -> Vec<CycleGroup>`:
-  Kosaraju SCC over a **cycle-specific** edge set. The orchestrator passes
-  `flow_kinds` minus `reexports`: a `pub use` re-export is a facade, not a
-  dependency, so re-export hubs (`lib.rs` / `mod.rs`) no longer fabricate cycles
-  (HK still counts `reexports`). Structural `contains` is excluded as before. An
-  SCC whose members span **more than one crate** is dropped — Rust forbids
-  circular crate dependencies, so it can only be a resolution artifact (crate
-  identity read from the node `crate` attribute, falling back to the path).
-  Classifies each surviving SCC `"test_embed"` (any member under `tests/` /
-  `test_support/` / a `*_test[s]` file) / `"mutual"` / `"chain"` and writes a
-  `cycle` attribute on each member node.
+- **`cycles.rs`** — `annotate_cycles(graph, flow_kinds) -> Vec<CycleGroup>`:
+  Kosaraju SCC over flow edges (today just `uses`). Both `contains` and
+  `reexports` are non-flow (`EdgeKindSpec.flow = false`), so a `mod foo;`
+  parent/child pair and a `pub use` facade hub (`lib.rs` / `mod.rs`) never
+  fabricate cycles. An SCC whose members span **more than one crate** is dropped
+  — Rust forbids circular crate dependencies, so it can only be a resolution
+  artifact (crate identity read from the node `crate` attribute, falling back to
+  the path). Classifies each surviving SCC `"test_embed"` (any member under
+  `tests/` / `test_support/` / a `*_test[s]` file) / `"mutual"` / `"chain"` and
+  writes a `cycle` attribute on each member node.
 - **`hk.rs`** — `annotate_hk(graph, flow_kinds)`: writes `fan_in` / `fan_out` /
   `fan_out_external` / `hk` (`hk = sloc × (fan_in × fan_out)²`) into each
   internal node's `attrs`. `fan_in` / `fan_out` count unique **internal** flow
@@ -382,17 +382,20 @@ Resolution runs in **two phases** so cross-crate edges can be submodule-precise:
 phase A walks every workspace crate, building all module nodes and a per-crate
 library module index; phase B then resolves the collected `use` / bare-path
 references against (1) the owning crate's index (intra-crate / `crate` / `self`
-/ `super`), (2) the **workspace library indexes** — a cross-crate
-`other_crate::sub::Item` walks the dependency crate's index to the file that
-owns `Item` (→ its `sub.rs`), falling back to the crate root when the path stops
-at a root item — and (3) the extern-crate map (registry deps → one crate-root /
-`External` node). `std`/`core`/keyword-only paths are ignored; external crates
-are added as `Crate` nodes with `external = true` and their source is never
-read. Intra-crate resolution is **re-export-aware**: when a path's trailing
-segment is not a submodule but a symbol the resolved module re-exports
-(`pub use error::DomainError`), it follows the `pub use` chain to the file that
-**defines** the symbol instead of anchoring on the facade module — so
-`crate::X` / `super::X` land on the definer, not on `lib.rs` / `mod.rs`. Module
+/ `super`), (2) the **workspace libraries** (each a module index + `pub use`
+re-export table) — a cross-crate `other_crate::sub::Item` walks the dependency
+crate's index to the file that owns `Item` (→ its `sub.rs`), falling back to the
+crate root when the path stops at a root item — and (3) the extern-crate map
+(registry deps → one crate-root / `External` node). `std`/`core`/keyword-only
+paths are ignored; external crates are added as `Crate` nodes with
+`external = true` and their source is never read. Resolution is
+**re-export-aware**, both intra- and cross-crate: when a path's trailing segment
+is not a submodule but a symbol the resolved module re-exports
+(`pub use error::DomainError`, or another crate's `pub use access_scope::AccessScope`),
+it follows the `pub use` chain to the file that **defines** the symbol instead of
+anchoring on the facade — so `crate::X` / `super::X` and `other_crate::X` land on
+the definer, not on a 17-line `lib.rs` / `mod.rs` hub (which would otherwise
+collect a huge false `fan_in`). Module
 node ids are namespaced **per target** (`mod:{pkg}::{kind}:{name}::…`): a package
 exposing a library and a same-named binary (`bat` lib + `bat` bin) keeps two
 distinct module trees, so `crate::X` in the library never mis-resolves onto the

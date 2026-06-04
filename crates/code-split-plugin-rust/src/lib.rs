@@ -49,10 +49,10 @@ impl LanguagePlugin for RustPlugin {
         edge_kinds.insert(
             "reexports".into(),
             EdgeKindSpec {
-                flow: true,
+                flow: false,
                 label: Some("reexport".into()),
                 description: Some(
-                    "Re-export (pub use) — re-exposes the other file's items as part of its own API.".into(),
+                    "Re-export (pub use) — re-exposes the other file's items as part of its own API. A facade, not a dependency: kept in the JSON but not drawn and excluded from fan-in / HK / cycles (the `pub use` info still drives use-resolution to the defining file).".into(),
                 ),
             },
         );

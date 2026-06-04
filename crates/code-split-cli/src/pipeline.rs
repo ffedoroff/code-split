@@ -97,15 +97,11 @@ pub(crate) fn analyze_directory(
 
     let level_spec = levels.into_iter().find(|l| l.name == "files");
     let flow_kinds = flow_kinds(level_spec.as_ref());
-    // Cycles run on a stricter edge set than coupling/HK: a `pub use` re-export
-    // is a facade, not a dependency, and re-export hubs (lib.rs / mod.rs) would
-    // otherwise fabricate cycles. Exclude `reexports` from cycle detection only.
-    let cycle_kinds: HashSet<String> = flow_kinds
-        .iter()
-        .filter(|k| k.as_str() != "reexports")
-        .cloned()
-        .collect();
-    let mut cycles = code_split_graph::cycles::annotate_cycles(&mut graph, &cycle_kinds);
+    // Cycles, fan-in/HK and the drawn map all run on the same flow edges. A
+    // `pub use` re-export is a facade, not a dependency, so the Rust plugin marks
+    // `reexports` non-flow (`EdgeKindSpec.flow = false`) — it never reaches any of
+    // these and re-export hubs (lib.rs / mod.rs) cannot fabricate cycles.
+    let mut cycles = code_split_graph::cycles::annotate_cycles(&mut graph, &flow_kinds);
     config::apply_cycle_rules(&mut cycles, &mut graph.nodes, &cfg.rules.cycles);
     code_split_graph::hk::annotate_hk(&mut graph, &flow_kinds);
     let stats = code_split_graph::stats::compute_stats(&graph);

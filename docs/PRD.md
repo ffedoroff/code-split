@@ -456,10 +456,12 @@ workspaces. The plugin MUST:
   library module index to the file that owns `Item` (→ its `sub.rs`); a path
   that stops at a crate-root item falls back to the root file (`lib.rs` /
   `main.rs`). A registry crate (no local library index) collapses to its
-  `External` node. Intra-crate resolution is **re-export-aware**: a `crate::X` /
-  `super::X` whose trailing segment is `pub use`-re-exported by the resolved
-  module follows the re-export to the file that **defines** `X`, not the facade
-  (`lib.rs` / `mod.rs`). Module ids are namespaced **per target**, so a package
+  `External` node. Resolution is **re-export-aware**, intra- and cross-crate: a
+  `crate::X` / `super::X` / `other_crate::X` whose trailing segment is
+  `pub use`-re-exported by the resolved module follows the re-export chain to the
+  file that **defines** `X`, not the facade (`lib.rs` / `mod.rs`) — so a widely
+  re-exported type lands on its defining file, not a 17-line crate-root hub.
+  Module ids are namespaced **per target**, so a package
   with a library and a same-named binary (`bat` lib + `bat` bin) does not collide
   their roots (which would mis-resolve library `crate::X` onto the binary's
   `main.rs`). Each file node records its owning crate (per-target) as a `crate`
@@ -479,12 +481,12 @@ workspaces. The plugin MUST:
   edges). The downstream pipeline then enriches every file node centrally
   (language-agnostically): per-file complexity metrics (cyclomatic, cognitive,
   Halstead, maintainability index, LOC variants) via `code-split-complexity`;
-  dependency cycles (Kosaraju SCC over flow edges **excluding `reexports`** — a
-  `pub use` facade is not a dependency, so re-export hubs do not fabricate cycles;
-  HK still counts `reexports`) annotated as a `cycle` node attribute
-  (`test_embed` | `mutual` | `chain`) with `CycleGroup` entries, with any SCC that
-  spans more than one crate dropped (Rust forbids circular crate dependencies);
-  and
+  dependency cycles (Kosaraju SCC over flow edges) annotated as a `cycle` node
+  attribute (`test_embed` | `mutual` | `chain`) with `CycleGroup` entries, with
+  any SCC that spans more than one crate dropped (Rust forbids circular crate
+  dependencies); `reexports` is **non-flow** (a `pub use` facade is not a
+  dependency), so it is excluded from cycles **and** fan-in / HK and is not drawn,
+  exactly like `contains`; and
   Henry-Kafura (`HK = sloc × (fan_in × fan_out)²`) — all written into the node's
   flat `attrs`. Edges to external nodes are excluded from `fan_in`/`fan_out`/`hk`
   and counted in `fan_out_external` instead. The Rust plugin additionally
