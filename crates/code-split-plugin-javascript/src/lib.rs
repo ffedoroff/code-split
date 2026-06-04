@@ -6,7 +6,15 @@
 //! reuse the walker/resolver without any copy-paste.
 
 use anyhow::Result;
-use code_split_plugin_api::{attrs::{AttrValue, ValueType}, edge::Edge, graph::Graph, level::{AttributeSpec, EdgeKindSpec, Level}, node::Node, plugin::{LanguagePlugin, PluginInput}, default_cycle_kinds, default_node_kinds};
+use code_split_plugin_api::{
+    attrs::{AttrValue, ValueType},
+    default_cycle_kinds, default_node_kinds,
+    edge::Edge,
+    graph::Graph,
+    level::{AttributeSpec, EdgeKindSpec, Level},
+    node::Node,
+    plugin::{LanguagePlugin, PluginInput},
+};
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
@@ -327,11 +335,7 @@ fn extract_import_specifiers(root: &tree_sitter::Node, source: &[u8]) -> Vec<(St
     specs
 }
 
-fn visit_imports<'t>(
-    node: &tree_sitter::Node<'t>,
-    source: &[u8],
-    specs: &mut Vec<(String, u32)>,
-) {
+fn visit_imports<'t>(node: &tree_sitter::Node<'t>, source: &[u8], specs: &mut Vec<(String, u32)>) {
     let mut cursor = node.walk();
     let children: Vec<tree_sitter::Node<'t>> = node.children(&mut cursor).collect();
 

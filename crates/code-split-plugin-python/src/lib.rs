@@ -1,5 +1,13 @@
 use anyhow::Result;
-use code_split_plugin_api::{attrs::{AttrValue, ValueType}, edge::Edge, graph::Graph, level::{AttributeSpec, EdgeKindSpec, Level}, node::Node, plugin::{LanguagePlugin, PluginInput}, default_cycle_kinds, default_node_kinds};
+use code_split_plugin_api::{
+    attrs::{AttrValue, ValueType},
+    default_cycle_kinds, default_node_kinds,
+    edge::Edge,
+    graph::Graph,
+    level::{AttributeSpec, EdgeKindSpec, Level},
+    node::Node,
+    plugin::{LanguagePlugin, PluginInput},
+};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;

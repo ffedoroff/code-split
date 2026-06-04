@@ -110,7 +110,10 @@ mod tests {
         assert_eq!(info.branch, "master");
         assert_eq!(info.commit, "841522b2aa09");
         assert_eq!(info.dirty_files, 1);
-        assert_eq!(info.origin.as_deref(), Some("https://github.com/dtolnay/anyhow"));
+        assert_eq!(
+            info.origin.as_deref(),
+            Some("https://github.com/dtolnay/anyhow")
+        );
     }
 
     /// origin is optional: a full override of the required fields still skips git

@@ -113,7 +113,10 @@ fn load_snapshot(path: &Path) -> Result<Snapshot> {
     // deserialization error about a moved/renamed field.
     let value: serde_json::Value = serde_json::from_slice(&bytes)
         .with_context(|| format!("parsing snapshot {}", path.display()))?;
-    let version = value.get("schema_version").and_then(|v| v.as_str()).unwrap_or("");
+    let version = value
+        .get("schema_version")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
     ensure_schema(version, path)?;
     serde_json::from_value(value).with_context(|| format!("parsing snapshot {}", path.display()))
 }

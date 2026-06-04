@@ -227,8 +227,7 @@ mod tests {
     }
     fn node_crate(id: &str, name: &str, krate: &str) -> Node {
         let mut n = node(id, name);
-        n.attrs
-            .insert("crate".into(), AttrValue::Str(krate.into()));
+        n.attrs.insert("crate".into(), AttrValue::Str(krate.into()));
         n
     }
 

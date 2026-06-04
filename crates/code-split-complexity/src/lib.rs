@@ -8,7 +8,11 @@
 //! [`metric_specs`] so the orchestrator can declare it in the snapshot.
 
 use code_split_graph::attrs::num_attr;
-use code_split_plugin_api::{attrs::ValueType, graph::Graph, level::{AttributeGroup, AttributeSpec}};
+use code_split_plugin_api::{
+    attrs::ValueType,
+    graph::Graph,
+    level::{AttributeGroup, AttributeSpec},
+};
 use rust_code_analysis::{
     FuncSpace, JavascriptParser, ParserTrait, PythonParser, RustParser, TsxParser,
     TypescriptParser, metrics,

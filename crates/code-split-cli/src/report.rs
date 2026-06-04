@@ -331,7 +331,12 @@ mod tests {
     fn render_name_expands_git_hash() {
         let t = Path::new("/x/proj");
         // Default-style template: `{ts}-{git-hash-3}.json`.
-        let out = render_name("{ts}-{git-hash-3}.json", t, Some("69aa698abcde"), fixed_ts());
+        let out = render_name(
+            "{ts}-{git-hash-3}.json",
+            t,
+            Some("69aa698abcde"),
+            fixed_ts(),
+        );
         assert!(out.ends_with("-69a.json"), "first 3 hash chars: {out}");
         // Full short hash.
         let full = render_name("{git-hash}.json", t, Some("69aa698abcde"), fixed_ts());

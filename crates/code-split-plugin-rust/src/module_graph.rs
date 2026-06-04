@@ -416,8 +416,12 @@ fn process_mod(
     let sub_name = m.ident.to_string();
     let mut sub_path = parent_mod_path.to_vec();
     sub_path.push(sub_name.clone());
-    let sub_mod_id =
-        module_node_id(&pkg.id.repr, target_kind_label(target), &target.name, &sub_path);
+    let sub_mod_id = module_node_id(
+        &pkg.id.repr,
+        target_kind_label(target),
+        &target.name,
+        &sub_path,
+    );
 
     let (loc, line) = if m.content.is_some() {
         let span = m.span();
@@ -1051,7 +1055,10 @@ mod tests {
         let mut rx = ReexportMap::new();
         rx.insert(
             vec!["domain".into()],
-            vec![("DomainError".into(), vec!["error".into(), "DomainError".into()])],
+            vec![(
+                "DomainError".into(),
+                vec!["error".into(), "DomainError".into()],
+            )],
         );
 
         // From `domain::local_client`, `use super::DomainError`.
@@ -1302,10 +1309,8 @@ mod tests {
     fn collector_captures_qualified_derive_paths() {
         // A crate referenced only through a qualified derive (no `use`) must
         // still produce a path — the derive arguments are otherwise opaque tokens.
-        let f = syn::parse_file(
-            "#[derive(Debug, serde::Serialize, thiserror::Error)] struct S;",
-        )
-        .unwrap();
+        let f = syn::parse_file("#[derive(Debug, serde::Serialize, thiserror::Error)] struct S;")
+            .unwrap();
         let mut c = CratePathCollector::default();
         syn::visit::Visit::visit_file(&mut c, &f);
         assert!(

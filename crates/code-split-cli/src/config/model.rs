@@ -235,7 +235,9 @@ loc = 800
     #[test]
     fn config_rejects_unknown_keys() {
         // A stale/mistyped key must be a hard error, not silently ignored.
-        let top = toml::from_str::<Config>("oops = 1").unwrap_err().to_string();
+        let top = toml::from_str::<Config>("oops = 1")
+            .unwrap_err()
+            .to_string();
         assert!(top.contains("unknown field"), "top-level: {top}");
 
         let nested = toml::from_str::<Config>("[output]\njson-name = \"x\"\n")

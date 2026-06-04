@@ -19,7 +19,10 @@ pub mod serialize;
 pub mod snapshot;
 pub mod stats;
 
-use code_split_plugin_api::{attrs::ValueType, level::{AttributeGroup, AttributeSpec}};
+use code_split_plugin_api::{
+    attrs::ValueType,
+    level::{AttributeGroup, AttributeSpec},
+};
 use std::collections::BTreeMap;
 
 /// The coupling/cycle attribute dictionary produced by [`annotate_hk`](hk::annotate_hk) /

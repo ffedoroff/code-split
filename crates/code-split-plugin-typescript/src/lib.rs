@@ -4,7 +4,11 @@
 //! shared ECMAScript walker/resolver from `code-split-plugin-javascript`.
 
 use anyhow::Result;
-use code_split_plugin_api::{graph::Graph, level::Level, plugin::{LanguagePlugin, PluginInput}};
+use code_split_plugin_api::{
+    graph::Graph,
+    level::Level,
+    plugin::{LanguagePlugin, PluginInput},
+};
 use code_split_plugin_javascript::{analyze_ecmascript, detect_with_marker, ecmascript_level};
 use std::path::Path;
 

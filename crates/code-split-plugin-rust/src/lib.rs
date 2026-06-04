@@ -1,5 +1,14 @@
 use anyhow::Result;
-use code_split_plugin_api::{attrs::{AttrValue, ValueType}, edge::Edge, graph::Graph, level::{AttributeSpec, EdgeKindSpec, Grouping, Level, Thresholds}, log, node::Node, plugin::{LanguagePlugin, PluginInput}, default_cycle_kinds, default_node_kinds};
+use code_split_plugin_api::{
+    attrs::{AttrValue, ValueType},
+    default_cycle_kinds, default_node_kinds,
+    edge::Edge,
+    graph::Graph,
+    level::{AttributeSpec, EdgeKindSpec, Grouping, Level, Thresholds},
+    log,
+    node::Node,
+    plugin::{LanguagePlugin, PluginInput},
+};
 use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
@@ -197,7 +206,9 @@ fn offline_metadata_error(manifest: &Path, err: cargo_metadata::Error) -> anyhow
 fn version_string() -> Option<String> {
     which::which("rustc").ok()?;
     let out = log::timed("rustc --version", || {
-        std::process::Command::new("rustc").arg("--version").output()
+        std::process::Command::new("rustc")
+            .arg("--version")
+            .output()
     })
     .ok()?;
     if out.status.success() {
