@@ -5,6 +5,12 @@ on:
     branches: [main]
   pull_request:
 
+# Least-privilege default for GITHUB_TOKEN. Every job here only reads the repo
+# (build / lint / test; coverage uploads via CODECOV_TOKEN, not the token), so a
+# read-only default is safe and satisfies CodeQL's workflow-permissions check.
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
 

@@ -9,6 +9,10 @@ on:
         required: false
         type: string
 
+# Read-only GITHUB_TOKEN; publishing authenticates with CARGO_REGISTRY_TOKEN.
+permissions:
+  contents: read
+
 jobs:
   publish:
     runs-on: ubuntu-22.04
