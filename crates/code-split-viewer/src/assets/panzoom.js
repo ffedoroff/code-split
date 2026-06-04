@@ -127,32 +127,34 @@ function setupPanZoom(frame, svg) {
   }
 
   // ── Fullscreen overlay ────────────────────────────────────────────────────────
+  // In fullscreen only `wrap` (the frame) is visible, so the page `<header>` and
+  // the body-attached overlays (node modal, snapshot popup, metric tooltip) are
+  // moved under `wrap` for the duration and restored on exit. The header rides a
+  // slide-in `.fs-bar` revealed when the cursor nears the top edge.
   let fsBarEl = null, fsMoveHandler = null;
-  let navEl = null, navParent = null, navNext = null;
-  let cpEl = null, cpParent = null, cpNext = null;
-  let ttEl = null, ttParent = null, ttNext = null;
+  let headerEl = null, headerParent = null, headerNext = null;
+  let fsMoved = [];   // relocated overlays: { el, parent, next }
+
+  const relocate = el => {
+    if (!el) return;
+    fsMoved.push({ el, parent: el.parentElement, next: el.nextSibling });
+    wrap.appendChild(el);
+  };
 
   function enterFS() {
     fsBarEl = document.createElement('div');
     fsBarEl.className = 'fs-bar';
 
-    navEl = document.querySelector('nav');
-    navParent = navEl.parentElement;
-    navNext = navEl.nextSibling;
-
-    const section = wrap.parentElement;
-    cpEl = section.querySelector('.control-panel');   // removed in the simplified UI
-    if (cpEl) { cpParent = cpEl.parentElement; cpNext = cpEl.nextSibling; }
-
-    fsBarEl.append(navEl);
-    if (cpEl) fsBarEl.append(cpEl);
+    headerEl = document.querySelector('header');
+    if (headerEl) {
+      headerParent = headerEl.parentElement;
+      headerNext = headerEl.nextSibling;
+      fsBarEl.append(headerEl);
+    }
     wrap.appendChild(fsBarEl);
 
-    const modal = document.getElementById('node-modal-overlay');
-    if (modal) {
-      ttEl = modal; ttParent = modal.parentElement; ttNext = modal.nextSibling;
-      wrap.appendChild(modal);
-    }
+    fsMoved = [];
+    ['node-modal-overlay', 'snap-popup', 'tt'].forEach(id => relocate(document.getElementById(id)));
 
     fsMoveHandler = e => {
       const barH = fsBarEl.offsetHeight;
@@ -170,9 +172,10 @@ function setupPanZoom(frame, svg) {
     if (fsMoveHandler) { document.removeEventListener('mousemove', fsMoveHandler); fsMoveHandler = null; }
     wrap.classList.remove('show-zoom');
     wrap.querySelector('.size-controls')?.style.removeProperty('top');
-    if (navEl && navParent) navParent.insertBefore(navEl, navNext);
-    if (cpEl && cpParent) cpParent.insertBefore(cpEl, cpNext);
-    if (ttEl && ttParent) { ttParent.insertBefore(ttEl, ttNext); ttEl = null; }
+    if (headerEl && headerParent) headerParent.insertBefore(headerEl, headerNext);
+    headerEl = null;
+    fsMoved.forEach(({ el, parent, next }) => { if (parent) parent.insertBefore(el, next); });
+    fsMoved = [];
     if (fsBarEl) { fsBarEl.remove(); fsBarEl = null; }
   }
 

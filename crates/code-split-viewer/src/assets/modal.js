@@ -157,7 +157,10 @@ function getModal() {
 function setModalDiagram(html) {
   const d = document.getElementById('node-modal-diagram');
   if (!d) return;
-  d.innerHTML = html;
+  // The diagram scrolls inside an inner wrapper; the shortcut legend is a sibling
+  // of that wrapper (absolutely placed in the diagram panel), so it stays put in
+  // the SVG area instead of scrolling away with the nodes.
+  d.innerHTML = `<div class="nm-diagram-scroll">${html}</div>`;
   const hints = document.createElement('div');
   hints.className = 'kbd-hints';
   hints.id = 'node-modal-hints';
@@ -172,19 +175,22 @@ function setModalDiagram(html) {
 // scroll. Runs after layout (next frame) so the rendered height is known.
 function centerDiagramNode(d) {
   requestAnimationFrame(() => {
-    const svg = d.querySelector('svg');
+    const sc = d.querySelector('.nm-diagram-scroll') || d;   // the scrolling wrapper
+    const svg = sc.querySelector('svg');
     const frac = svg && parseFloat(svg.dataset.nodeCy || '');
     if (!svg || !isFinite(frac)) return;
     const svgRect  = svg.getBoundingClientRect();
-    const contRect = d.getBoundingClientRect();
-    const nodeInContent = (svgRect.top - contRect.top) + d.scrollTop + frac * svgRect.height;
-    d.scrollTop = Math.max(0, nodeInContent - d.clientHeight / 2);
+    const contRect = sc.getBoundingClientRect();
+    const nodeInContent = (svgRect.top - contRect.top) + sc.scrollTop + frac * svgRect.height;
+    sc.scrollTop = Math.max(0, nodeInContent - sc.clientHeight / 2);
   });
 }
 window.setModalDiagram = setModalDiagram;
 
 function closeModal() {
   window.hideMetricTooltip?.();
+  window._modalNode = null;
+  window.flyoutHeader?.unmount('modal');
   const overlay = document.getElementById('node-modal-overlay');
   if (overlay) overlay.style.display = 'none';
   document.body.style.overflow = '';
@@ -192,6 +198,7 @@ function closeModal() {
 }
 function closeModalSilent() {
   window.hideMetricTooltip?.();
+  window.flyoutHeader?.unmount('modal');
   const overlay = document.getElementById('node-modal-overlay');
   if (overlay) overlay.style.display = 'none';
   document.body.style.overflow = '';

@@ -35,19 +35,35 @@ function switchToLevel(target) {
   if (sec && sec.dataset.rendered !== 'true' && window.gv) renderView(sec);
 }
 function openModalForNode(nodeId, level) {
-  const nodeData = activeGraph(level).nodes.find(n => n.id === nodeId)
-    ?? window.DIFF?.[level]?.nodes?.find(n => n.id === nodeId);
+  // Is the node on the side currently shown? (vs. only in the union/DIFF)
+  const onSide   = activeGraph(level).nodes.find(n => n.id === nodeId);
+  const nodeData = onSide ?? window.DIFF?.[level]?.nodes?.find(n => n.id === nodeId);
   if (!nodeData) return false;
+  // Remember which node the modal shows so a baseline⇄current toggle can re-render it.
+  window._modalNode = { id: nodeId, level };
   // Clear any tooltip anchored to the element we're about to replace.
   window.hideMetricTooltip?.();
   const section = document.querySelector(`.view[data-view="${level}"]`);
   const overlay = getModal();
-  const mc = buildModalContent(nodeData, level);
-  document.getElementById('node-modal-hdr-title').innerHTML = mc.hdr;
-  document.getElementById('node-modal-body').innerHTML = mc.body;
-  window.setModalDiagram(mc.diagram);
-  attachModalCheckbox(nodeData, level, section);
+  if (onSide) {
+    const mc = buildModalContent(nodeData, level);
+    document.getElementById('node-modal-hdr-title').innerHTML = mc.hdr;
+    document.getElementById('node-modal-body').innerHTML = mc.body;
+    window.setModalDiagram(mc.diagram);
+    attachModalCheckbox(nodeData, level, section);
+  } else {
+    // The node does not exist on the side now shown (a removed node viewed as
+    // current, or an added node viewed as baseline). Don't render its card or
+    // its (stale, other-side) values — just say it isn't here.
+    const side = viewModeSuffix().trim();   // 'Baseline' / 'Current' (diff mode only)
+    document.getElementById('node-modal-hdr-title').innerHTML =
+      `<span class="nm-title">${escHtml(nodeData.name || nodeId)}</span>`;
+    document.getElementById('node-modal-body').innerHTML =
+      `<div class="nm-absent">Not present in the ${escHtml(side.toLowerCase())} snapshot.</div>`;
+    window.setModalDiagram('');
+  }
   overlay.style.display = 'flex';
   document.body.style.overflow = 'hidden';
+  window.flyoutHeader?.mount(overlay, 'modal');
   return true;
 }

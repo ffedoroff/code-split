@@ -106,6 +106,11 @@ function setViewSide(side) {
       || (side === 'baseline' && !window.BASELINE)) return;
   window.viewSide = side;
   window.navSetSide?.();
+  // Clear stale hover highlights: refreshing the table below replaces the hovered
+  // row without firing its `mouseleave`, which would otherwise leave its map node
+  // lit — and a second hover would then light a second node.
+  document.querySelectorAll('g.node.node-hl').forEach(n => n.classList.remove('node-hl'));
+  document.querySelectorAll('.row-hl').forEach(r => r.classList.remove('row-hl'));
   // Active-side feedback is the highlighted control (snap-active); the old
   // Baseline/Current nav buttons are gone.
   document.querySelectorAll('.view').forEach(sec => {
@@ -116,7 +121,64 @@ function setViewSide(side) {
   });
   updateWarnCount();
   updateActiveSnapGroup();
+  // If a node modal is open, re-render it for the new side so its diagram and
+  // fields follow the toggle (otherwise only the map/tables/URL would update).
+  const m = window._modalNode;
+  if (m && document.getElementById('node-modal-overlay')?.style.display === 'flex')
+    window.openModalForNode?.(m.id, m.level);
 }
+
+// The header "toggle" button and the `t` hotkey switch baseline⇄current. A no-op
+// in review (a single snapshot — nothing to toggle).
+function toggleViewSide() {
+  if (!window.BASELINE || !window.CURRENT) return;
+  setViewSide(window.viewSide === 'current' ? 'baseline' : 'current');
+}
+function setupModeToggle() {
+  document.getElementById('meta-mode')?.addEventListener('click', toggleViewSide);
+  document.addEventListener('keydown', e => {
+    if ((e.key !== 't' && e.key !== 'T') || e.metaKey || e.ctrlKey || e.altKey) return;
+    const t = e.target;
+    if (t && (/^(input|textarea|select)$/i.test(t.tagName) || t.isContentEditable)) return;
+    toggleViewSide();
+  });
+}
+
+// Relocate the live <header> into a full-screen overlay (the node modal / the
+// Prompt-Generator popup) as a slide-down bar, so its controls (toggle, snapshot
+// controls, prompt button) stay reachable while the overlay covers the page;
+// restored on close. One owner at a time. Fullscreen does its own header
+// relocation (panzoom), so this defers while a fullscreen element is active.
+window.flyoutHeader = (function () {
+  let home = null, homeNext = null, bar = null, owner = null, ownerEl = null;
+  return {
+    mount(container, key) {
+      if (owner || document.fullscreenElement || !container) return;
+      const header = document.querySelector('header');
+      if (!header) return;
+      home = header.parentElement; homeNext = header.nextSibling;
+      bar = document.createElement('div');
+      // Always visible in these overlays — not a hover-reveal flyout.
+      bar.className = 'fs-bar visible';
+      bar.append(header);
+      container.appendChild(bar);
+      // Reserve exactly the bar's height as top space (it may wrap to >1 line, so
+      // a fixed value would be wrong) — reading offsetHeight forces a sync layout.
+      container.classList.add('fly-header-host');
+      container.style.paddingTop = bar.offsetHeight + 'px';
+      owner = key; ownerEl = container;
+    },
+    unmount(key) {
+      if (owner !== key) return;
+      const header = document.querySelector('header');
+      if (home && header) home.insertBefore(header, homeNext);
+      bar?.remove();
+      ownerEl?.classList.remove('fly-header-host');
+      if (ownerEl) ownerEl.style.paddingTop = '';
+      bar = null; home = null; owner = null; ownerEl = null;
+    }
+  };
+})();
 
 // Refresh the distinct-warning-type count next to the Prompt-Generator button
 // for the active level (it tracks the active side).
@@ -129,9 +191,9 @@ function updateWarnCount() {
 
 function updateHeader() {
   const meta      = window.META;
-  const hasBaseline = meta.baseline !== null;   // an optional baseline is loaded
-  const hasCurrent  = meta.current  !== null;   // the primary snapshot (normally always present)
-  const isReview  = !hasBaseline;               // no baseline → single-snapshot "review"
+  const hasBaseline = meta.baseline !== null;
+  const hasCurrent  = meta.current  !== null;
+  const isReview  = !hasBaseline || !hasCurrent;   // only one snapshot present → "review"
 
   document.body.classList.toggle('mode-review', isReview);
   // The mode word moved into the meta area, so the title is just the project.
@@ -139,27 +201,30 @@ function updateHeader() {
   const titleEl = document.getElementById('title');
   titleEl.textContent = meta.target;
   titleEl.title = meta.target;
-  // Big mode word: "diff" between the two controls, "view" after the single one
-  // in review (placement handled by flex `order` in CSS).
-  document.getElementById('meta-mode').textContent = isReview ? 'view' : 'diff';
+  // Toggle button: shown only in a diff (click or `t` to switch baseline⇄current).
+  // In review there is a single snapshot — nothing to toggle — so it is hidden.
+  const modeEl = document.getElementById('meta-mode');
+  modeEl.style.display = isReview ? 'none' : '';
+  modeEl.textContent = 'toggle';
+  modeEl.title = 'Click to toggle baseline ⇄ current (press t)';
 
-  // BASELINE = optional baseline control (branch + commit). Hidden entirely in
-  // review — its "Set baseline" action lives in the current control's popup.
+  // Each snapshot control is shown only when its snapshot exists; the missing
+  // side's "Set …" action lives in the surviving control's popup.
   document.querySelector('.snap-group[data-snap="baseline"]').style.display = hasBaseline ? '' : 'none';
   const baselineName = document.getElementById('meta-baseline-name');
   baselineName.textContent = hasBaseline ? meta.baseline.name : '';
   baselineName.title       = hasBaseline ? meta.baseline.name : '';
   document.getElementById('meta-baseline-commit').textContent = hasBaseline && meta.baseline.commit ? ` ${meta.baseline.commit}` : '';
 
-  // CURRENT = the primary snapshot the report is about: always shown.
+  document.querySelector('.snap-group[data-snap="current"]').style.display = hasCurrent ? '' : 'none';
   const currentName = document.getElementById('meta-current-name');
   currentName.textContent = hasCurrent ? meta.current.name : '';
   currentName.title       = hasCurrent ? meta.current.name : '';
   document.getElementById('meta-current-commit').textContent  = hasCurrent && meta.current.commit ? ` ${meta.current.commit}` : '';
 
-  // Review shows the single (current) snapshot; the active side is reflected on
-  // the control itself (snap-active), since the Baseline/Current nav buttons are gone.
-  if (isReview) window.viewSide = 'current';
+  // Keep the shown side on a snapshot that actually exists.
+  if (!hasCurrent)       window.viewSide = 'baseline';
+  else if (!hasBaseline) window.viewSide = 'current';
   updateActiveSnapGroup();
 }
 
@@ -293,12 +358,17 @@ function buildSnapPopupHTML(snap, refSnap, sideLabel) {
   // Actions — moved out of the header. Wired in `show()`. The baseline control
   // offers replace + remove; the current control offers replace, plus "Set
   // baseline" in review (where there is no separate baseline control).
+  // Symmetric actions: each side can be replaced; it can be removed only while the
+  // OTHER side exists (so at least one snapshot always remains); and the missing
+  // side can be set from here.
   const acts = [];
   if (sideLabel === 'Baseline') {
     acts.push('<button class="sp-action" data-act="upload-baseline">↑ Replace baseline</button>');
-    acts.push('<button class="sp-action sp-action-x" data-act="remove-baseline">✕ Remove baseline</button>');
+    if (window.CURRENT)   acts.push('<button class="sp-action sp-action-x" data-act="remove-baseline">✕ Remove baseline</button>');
+    if (!window.CURRENT)  acts.push('<button class="sp-action" data-act="upload-current">↑ Set current</button>');
   } else if (sideLabel === 'Current') {
     acts.push('<button class="sp-action" data-act="upload-current">↑ Replace current</button>');
+    if (window.BASELINE)  acts.push('<button class="sp-action sp-action-x" data-act="remove-current">✕ Remove current</button>');
     if (!window.BASELINE) acts.push('<button class="sp-action" data-act="upload-baseline">↑ Set baseline</button>');
   }
   if (acts.length)
@@ -308,22 +378,19 @@ function buildSnapPopupHTML(snap, refSnap, sideLabel) {
 }
 
 function setupSnapPopup() {
-  let popup = null, hideTimer = null;
+  let popup = null, openFor = null;   // openFor = the .snap-group whose popup is shown
 
   function getPopup() {
     if (!popup) {
       popup = document.createElement('div');
       popup.id = 'snap-popup';
-      document.body.appendChild(popup);
-      popup.addEventListener('mouseenter', () => { clearTimeout(hideTimer); hideTimer = null; });
-      popup.addEventListener('mouseleave', scheduleHide);
+      // Fullscreen shows only the frame; attach there so the header's popup is visible.
+      (document.fullscreenElement || document.body).appendChild(popup);
     }
     return popup;
   }
 
-  function scheduleHide() {
-    hideTimer = setTimeout(() => { if (popup) popup.style.display = 'none'; }, 150);
-  }
+  function hide() { if (popup) popup.style.display = 'none'; openFor = null; }
 
   function show(snap, anchor, refSnap, sideLabel) {
     if (!snap) return;
@@ -346,10 +413,12 @@ function setupSnapPopup() {
         if (act === 'upload-baseline')      document.getElementById('input-baseline').click();
         else if (act === 'upload-current')  document.getElementById('input-current').click();
         else if (act === 'remove-baseline') { window.BASELINE = null; recomputeAll(); }
-        p.style.display = 'none';
+        else if (act === 'remove-current')  { window.CURRENT = null;  recomputeAll(); }
+        hide();
       });
     });
     p.style.display = 'block';
+    openFor = anchor;
     requestAnimationFrame(() => {
       const r  = anchor.getBoundingClientRect();
       let left = r.left;
@@ -362,17 +431,24 @@ function setupSnapPopup() {
   }
 
   document.querySelectorAll('.snap-group').forEach((grp, i) => {
-    grp.addEventListener('mouseenter', () => {
-      clearTimeout(hideTimer);
+    // Click the control body → switch which side is shown on the map.
+    grp.addEventListener('click', () => setViewSide(i === 0 ? 'baseline' : 'current'));
+    // Click the pencil → open/close the details + actions popup (no hover trigger).
+    // `stopPropagation` so it does not also switch the side or count as an outside click.
+    grp.querySelector('.snap-edit')?.addEventListener('click', e => {
+      e.stopPropagation();
+      if (openFor === grp) { hide(); return; }
       const snap = i === 0 ? window.BASELINE : window.CURRENT;
       const ref  = i === 1 ? window.BASELINE : null;
       show(snap, grp, ref, i === 0 ? 'Baseline' : 'Current');
     });
-    grp.addEventListener('mouseleave', scheduleHide);
-    // Clicking the control switches which side is shown on the map (replaces the
-    // removed Baseline/Current nav buttons).
-    grp.addEventListener('click', () => setViewSide(i === 0 ? 'baseline' : 'current'));
   });
+
+  // Dismiss on an outside click or Escape.
+  document.addEventListener('click', e => {
+    if (openFor && popup && !popup.contains(e.target) && !openFor.contains(e.target)) hide();
+  });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') hide(); });
 }
 
 // Mark the header snapshot group (the file uploader at the top) for the side
@@ -466,6 +542,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
   document.querySelectorAll('.view').forEach(sec => setupNodeTable(sec, sec.dataset.view));
   setupSnapPopup();
+  setupModeToggle();
   setupFileControls();
   setupTooltip();
   buildSummary();
@@ -476,9 +553,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.querySelector('.summary').classList.toggle('collapsed');
   });
 
-  document.getElementById('nav-prompt-btn')?.addEventListener('click', () => {
-    openExportPopup(currentLevel());
-  });
 
   const active = document.querySelector('.view.active');
   const loading = active?.querySelector('.loading-indicator');

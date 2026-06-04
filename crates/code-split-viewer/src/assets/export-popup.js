@@ -126,7 +126,7 @@ function openExportPopup(level, restore) {
       '</div>';
     document.body.appendChild(overlay);
 
-    const closeExport = () => { overlay.style.display = 'none'; document.body.style.overflow = ''; epClearUrl(); };
+    const closeExport = () => { window.flyoutHeader?.unmount('prompt'); overlay.style.display = 'none'; document.body.style.overflow = ''; epClearUrl(); };
     document.getElementById('export-popup-close').addEventListener('click', closeExport);
     overlay.addEventListener('mousedown', e => { if (e.target === overlay) closeExport(); });
     document.addEventListener('keydown', e => { if (e.key === 'Escape' && overlay.style.display !== 'none') closeExport(); });
@@ -435,4 +435,5 @@ function openExportPopup(level, restore) {
     (typeof viewModeSuffix === 'function' ? viewModeSuffix() : '');
   overlay.style.display = 'flex';
   document.body.style.overflow = 'hidden';
+  window.flyoutHeader?.mount(overlay, 'prompt');
 }

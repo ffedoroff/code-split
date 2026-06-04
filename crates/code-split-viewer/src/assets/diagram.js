@@ -755,7 +755,8 @@ window.isOpenSrcClick = isOpenSrcClick;
 function kbdHintsHtml() {
   const srcKey = IS_MAC ? '⌘' : 'Ctrl';
   return `<span class="kbd-hint"><kbd>⇧ Shift</kbd> + click — select node</span>` +
-         `<span class="kbd-hint"><kbd>${srcKey}</kbd> + click — view source</span>`;
+         `<span class="kbd-hint"><kbd>${srcKey}</kbd> + click — view source</span>` +
+         `<span class="kbd-hint kbd-hint-toggle"><kbd>t</kbd> — toggle baseline/current</span>`;
 }
 window.kbdHintsHtml = kbdHintsHtml;
 
@@ -813,14 +814,9 @@ function setupTooltips(svgFrame, level) {
       }
       // Shift = "select mode": toggle this node's selection.
       if (e.shiftKey) { toggleNodeSelected(node, level, section); return; }
-      const overlay = getModal();
-      const mc = buildModalContent(node, level);
-      document.getElementById('node-modal-hdr-title').innerHTML = mc.hdr;
-      document.getElementById('node-modal-body').innerHTML = mc.body;
-      window.setModalDiagram(mc.diagram);
-      attachModalCheckbox(node, level, section);
-      overlay.style.display = 'flex'; document.body.style.overflow = 'hidden';
-      window.navPush?.(level, node.id);
+      // Route through openModalForNode so the modal show / header flyout / open-node
+      // tracking all live in one place.
+      if (window.openModalForNode?.(node.id, level)) window.navPush?.(level, node.id);
     });
 
     g.addEventListener('mouseenter', () => {

@@ -102,13 +102,20 @@ function setupNodeTable(section, level) {
   searchInput.placeholder = 'Search…';
   searchInput.className = 'nt-search-input';
   searchInput.addEventListener('click', e => e.stopPropagation());
+  // Prompt Generator — moved here from the page header; sits right of the node count.
+  const promptBtn = document.createElement('button');
+  promptBtn.id = 'nav-prompt-btn';
+  promptBtn.title = 'Generate an AI refactoring prompt';
+  promptBtn.innerHTML = 'Prompt Generator <span class="nav-ai-letters">AI</span>' +
+                        '<span class="nav-warn-count" id="nav-warn-count"></span>';
+  promptBtn.addEventListener('click', e => { e.stopPropagation(); openExportPopup(level); });
   const copySelBtn = document.createElement('button');
   copySelBtn.className = 'nt-copy-sel-btn';
   copySelBtn.textContent = '⎘ Copy 0 selected';
   copySelBtn.title = 'Export selected nodes';
   copySelBtn.disabled = true;   // enabled once at least one row is selected
   copySelBtn.addEventListener('click', e => { e.stopPropagation(); openExportPopup(level); });
-  hdr.append(hdrTitle, hdrBadge, searchInput, copySelBtn);
+  hdr.append(hdrTitle, hdrBadge, promptBtn, searchInput, copySelBtn);
 
   const body = document.createElement('div');
   body.className = 'node-table-body';
@@ -263,14 +270,9 @@ function setupNodeTable(section, level) {
         section._gNodeMap?.get(n.id)?.classList.remove('node-hl');
       });
       tr.addEventListener('click', () => {
-        const overlay = getModal();
-        const mc = buildModalContent(n, level);
-        document.getElementById('node-modal-hdr-title').innerHTML = mc.hdr;
-        document.getElementById('node-modal-body').innerHTML = mc.body;
-        window.setModalDiagram(mc.diagram);
-        attachModalCheckbox(n, level, section);
-        overlay.style.display = 'flex'; document.body.style.overflow = 'hidden';
-        window.navPush(level, n.id);
+        // Route through openModalForNode so the modal show / header flyout /
+        // open-node tracking all live in one place.
+        if (window.openModalForNode?.(n.id, level)) window.navPush(level, n.id);
       });
 
       const selTd = document.createElement('td');

@@ -16,29 +16,37 @@ header code { color: #1abc9c; }
 .meta-info code { display: inline-block; max-width: 200px; overflow: hidden;
                   text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
 .ml { color: #b8c5d2; }
-.mc { color: #8ba6c0; font-size: 12px; }
-.meta-info { color: #8ba6c0; font-size: 12px; }
-/* Big mode word — "diff" between the two controls, "view" after the single one in
-   review. Sized to match the header title. Flex `order` reseats it per mode. */
-.meta-mode { font-size: 18px; font-weight: 500; color: #fff; white-space: nowrap;
-             text-transform: lowercase; margin: 0 4px; order: 2; }
+.mc { color: #8ba6c0; font-size: 13px; }
+.meta-info { color: #8ba6c0; font-size: 13px; }
+/* Big mode word, now a toggle button — "toggle" between the two controls (click /
+   hotkey `t` to switch baseline⇄current), "view" after the single control in
+   review (disabled). Sized to match the header title; flex `order` reseats it. */
+.meta-mode { font: inherit; font-size: 13px; color: #ecf0f1; white-space: nowrap;
+             text-transform: lowercase; margin: 0 4px; order: 2; user-select: none;
+             background: #455a73; border: 0; border-radius: 4px; padding: 6px 14px;
+             cursor: pointer; transition: background .15s; }
+.meta-mode:hover:not(:disabled) { background: #5d7593; }
+.meta-mode:disabled { cursor: default; background: #3a4a5e; color: #8ba6c0; }
 .snap-group[data-snap="baseline"] { order: 1; }
 .snap-group[data-snap="current"]  { order: 3; }
 body.mode-review #meta-mode { order: 4; }   /* review: place "view" after the control */
-/* Snapshot controls (branch + commit): click switches the shown side; hover opens
-   the detail popup (which also holds the upload / remove actions). */
-.snap-group { display: inline-flex; align-items: center; gap: 5px; cursor: pointer;
-              border: 1px solid rgba(255,255,255,.18); border-radius: 6px; padding: 3px 8px;
-              transition: background .15s, border-color .15s, box-shadow .15s; }
-.snap-group:hover { background: rgba(255,255,255,.10); border-color: rgba(255,255,255,.35); }
+/* Snapshot controls (branch + commit): clicking the body switches the shown side;
+   the ✎ pencil opens the detail/actions popup. No hover trigger. */
+.snap-group { display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+              border: 1px solid rgba(255,255,255,.18); border-radius: 6px; padding: 6px 11px;
+              transition: border-color .15s, box-shadow .15s; }
 /* The snapshot input currently shown on the map / tables (active Baseline/Current side). */
 .snap-group.snap-active { border-color: #1abc9c; background: rgba(26,188,156,.20);
                           box-shadow: 0 0 0 1px rgba(26,188,156,.5) inset; }
+/* Gear: opens the snapshot details + actions popup. */
+.snap-edit { background: none; border: 0; color: #8ba6c0; cursor: pointer;
+             font-size: 18px; line-height: 1; padding: 1px 4px; border-radius: 4px; }
+.snap-edit:hover { color: #fff; background: rgba(255,255,255,.18); }
 
-/* Prompt Generator — moved into the header, pinned to the right edge. */
-#nav-prompt-btn { margin-left: auto; background: #455a73; color: #ecf0f1; border: 0;
-                  padding: 6px 14px; font-size: 13px; cursor: pointer; border-radius: 4px;
-                  white-space: nowrap; }
+/* Prompt Generator — lives in the Details table header, right of the node count. */
+#nav-prompt-btn { background: #455a73; color: #ecf0f1; border: 0; font-family: inherit;
+                  padding: 3px 12px; font-size: 12px; font-weight: 600; cursor: pointer;
+                  border-radius: 4px; white-space: nowrap; }
 #nav-prompt-btn:hover { background: #5d7593; }
 .nav-ai-letters { color: #fff; font-weight: 700; display: inline-block;
                   animation: ai-pulse 2s ease-in-out infinite; }
@@ -125,7 +133,13 @@ main { padding: 16px 24px 40px; }
 .fs-bar { position: absolute; top: 0; left: 0; right: 0; z-index: 200;
           transform: translateY(-100%); transition: transform .18s ease; }
 .fs-bar.visible { transform: translateY(0); }
-.fs-bar nav { margin: 0; }
+.fs-bar header { margin: 0; box-shadow: 0 2px 10px rgba(0,0,0,.25); }
+/* Overlays (node modal / prompt popup) hosting the always-on header reserve top
+   space (the exact amount is set inline from the bar's measured height). */
+.fly-header-host { box-sizing: border-box; }
+/* The `t` toggle hint only applies in a diff (two snapshots) — hide it in review. */
+body.mode-review .kbd-hint-toggle { display: none; }
+.fly-header-host > .fs-bar { z-index: 10001; }   /* above the overlay's own content */
 .fs-bar .control-panel { margin: 0; border-radius: 0; border-left: none; border-right: none; border-top: none; max-width: none; }
 
 .loading-indicator { display: none; position: absolute; inset: 0; background: rgba(255,255,255,.9);
@@ -150,11 +164,17 @@ main { padding: 16px 24px 40px; }
 #node-modal-close:hover { color: #333; }
 #node-modal-main { display: flex; flex: 1; overflow: hidden; }
 #node-modal-body { overflow-y: auto; flex: 1; padding: 0 28px 24px; border-right: 1px solid #eee; }
-#node-modal-diagram { flex: 2; display: flex; align-items: center; justify-content: center;
-                      padding: 32px; background: #f8fafc; overflow-y: auto; overflow-x: hidden; position: relative; }
+/* Shown when the opened node does not exist on the side now toggled to. */
+.nm-absent { padding: 28px 4px; color: #888; font-size: 14px; font-style: italic; }
+/* The diagram panel is a non-scrolling positioning frame (so the shortcut legend,
+   absolutely placed here, stays put). Scrolling happens in the inner wrapper. */
+#node-modal-diagram { flex: 2; position: relative; overflow: hidden; background: #f8fafc; }
+.nm-diagram-scroll { width: 100%; height: 100%; box-sizing: border-box; padding: 32px;
+                     overflow-y: auto; overflow-x: hidden;
+                     display: flex; align-items: center; justify-content: center; }
 /* `margin:auto` (not align-items) centres a short diagram yet keeps a tall one
    fully reachable when it overflows and scrolls. */
-#node-modal-diagram > svg { margin: auto; }
+.nm-diagram-scroll > svg { margin: auto; }
 .nm-title { font-size: 18px; font-weight: 700; color: #2c3e50;
             overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nm-badge { display: inline-block; flex-shrink: 0; padding: 2px 10px; border-radius: 12px;
@@ -310,7 +330,7 @@ text.sn-hint, tspan.sn-hint, g.sn-hint { cursor: inherit; }
 #export-popup-overlay { position: fixed; inset: 0; z-index: 10001; background: rgba(0,0,0,.45);
                         display: flex; align-items: center; justify-content: center; }
 #export-popup { background: #e9edf2; box-shadow: 0 8px 40px rgba(0,0,0,.25);
-                display: flex; flex-direction: column; width: 100vw; height: 100vh; border-radius: 0; }
+                display: flex; flex-direction: column; width: 100%; height: 100%; border-radius: 0; }
 #export-popup-hdr { display: flex; align-items: center; gap: 10px; padding: 14px 18px 10px;
                     border-bottom: 1px solid #e8edf2; }
 #export-popup-hdr h3 { margin: 0; font-size: 15px; font-weight: 700; color: #1a2f45; flex: 1; }
