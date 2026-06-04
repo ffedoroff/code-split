@@ -53,7 +53,7 @@ jobs:
       # Keep the snapshot as an artifact. On main this becomes the baseline that
       # future PRs download; on a PR it's the downloadable full HTML report.
       - name: Upload snapshot
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: code-split-report
           path: |
@@ -97,7 +97,7 @@ jobs:
 
       - name: Sticky comment
         if: github.event_name == 'pull_request'
-        uses: marocchino/sticky-pull-request-comment@v2
+        uses: marocchino/sticky-pull-request-comment@v3
         with:
           header: code-split
           path: comment.md
