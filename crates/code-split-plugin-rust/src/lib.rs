@@ -7,7 +7,7 @@ use code_split_plugin_api::{
     level::{AttributeSpec, EdgeKindSpec, Grouping, Level, Thresholds},
     log,
     node::Node,
-    plugin::{LanguagePlugin, Preset, PluginInput},
+    plugin::{LanguagePlugin, PluginInput, Preset},
 };
 use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, HashMap, HashSet};

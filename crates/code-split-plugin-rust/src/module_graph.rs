@@ -1025,7 +1025,11 @@ mod tests {
         };
         // `use super::*` and `use crate::<ancestor>::*` from a child -> super.
         assert!(is_super_glob(&pu(&["super"], &["assets", "lazy"], true)));
-        assert!(is_super_glob(&pu(&["crate", "assets"], &["assets", "lazy"], true)));
+        assert!(is_super_glob(&pu(
+            &["crate", "assets"],
+            &["assets", "lazy"],
+            true
+        )));
         // Globbing a *child* module (descendant) is not a super pull.
         assert!(!is_super_glob(&pu(&["serialized"], &["assets"], true)));
         // A specific (non-glob) import of a parent item is a real dependency.
@@ -1035,7 +1039,11 @@ mod tests {
             false
         )));
         // A glob of an unrelated/extern module is not an ancestor pull.
-        assert!(!is_super_glob(&pu(&["rayon", "prelude"], &["assets"], true)));
+        assert!(!is_super_glob(&pu(
+            &["rayon", "prelude"],
+            &["assets"],
+            true
+        )));
     }
 
     fn use_paths(src: &str) -> Vec<Vec<String>> {
