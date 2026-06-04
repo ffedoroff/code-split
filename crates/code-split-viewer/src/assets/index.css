@@ -320,11 +320,6 @@ text.sn-hint, tspan.sn-hint, g.sn-hint { cursor: inherit; }
                    font-family: inherit; }
 .nt-search-input:focus { border-color: #1abc9c; }
 .nt-search-input::placeholder { color: #aaa; font-weight: 400; }
-.nt-copy-sel-btn { margin-left: 4px; padding: 2px 10px; font-size: 12px; font-family: inherit;
-                   border: 1px solid #8ba6c0; border-radius: 4px; background: #f0f4f8;
-                   color: #2c3e50; cursor: pointer; white-space: nowrap; }
-.nt-copy-sel-btn:hover:not(:disabled) { background: #dbe9f4; border-color: #4d6f9c; }
-.nt-copy-sel-btn:disabled { opacity: .45; cursor: not-allowed; }
 
 /* ── Export popup ───────────────────────────────────────────────────────────── */
 #export-popup-overlay { position: fixed; inset: 0; z-index: 10001; background: rgba(0,0,0,.45);
@@ -419,9 +414,8 @@ text.sn-hint, tspan.sn-hint, g.sn-hint { cursor: inherit; }
 .exp-copy-btn:hover { background: #3a5a8a; opacity: 1; }
 .exp-copy-icon { font-size: 22px; line-height: 1; }
 .node-table-wrap.collapsed .node-table-body { display: none; }
-/* Collapsed: show only the title + count, hide the search box and copy button. */
-.node-table-wrap.collapsed .nt-search-input,
-.node-table-wrap.collapsed .nt-copy-sel-btn { display: none; }
+/* Collapsed: show only the title + count, hide the search box. */
+.node-table-wrap.collapsed .nt-search-input { display: none; }
 
 .node-table-container {
   overflow-x: auto; max-height: 760px; overflow-y: auto;

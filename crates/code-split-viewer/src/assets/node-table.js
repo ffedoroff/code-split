@@ -109,13 +109,7 @@ function setupNodeTable(section, level) {
   promptBtn.innerHTML = 'Prompt Generator <span class="nav-ai-letters">AI</span>' +
                         '<span class="nav-warn-count" id="nav-warn-count"></span>';
   promptBtn.addEventListener('click', e => { e.stopPropagation(); openExportPopup(level); });
-  const copySelBtn = document.createElement('button');
-  copySelBtn.className = 'nt-copy-sel-btn';
-  copySelBtn.textContent = '⎘ Copy 0 selected';
-  copySelBtn.title = 'Export selected nodes';
-  copySelBtn.disabled = true;   // enabled once at least one row is selected
-  copySelBtn.addEventListener('click', e => { e.stopPropagation(); openExportPopup(level); });
-  hdr.append(hdrTitle, hdrBadge, promptBtn, searchInput, copySelBtn);
+  hdr.append(hdrTitle, hdrBadge, promptBtn, searchInput);
 
   const body = document.createElement('div');
   body.className = 'node-table-body';
@@ -156,8 +150,6 @@ function setupNodeTable(section, level) {
       allCb.indeterminate = n > 0 && n < rows.length;
       allCb.checked = rows.length > 0 && n === rows.length;
     }
-    copySelBtn.disabled = n === 0;   // visible but disabled when nothing is selected
-    copySelBtn.textContent = `⎘ Copy ${n} selected`;
   }
 
   searchInput.addEventListener('input', () => { searchQuery = searchInput.value.trim().toLowerCase(); renderRows(); });
