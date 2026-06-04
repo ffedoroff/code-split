@@ -49,9 +49,10 @@ function buildDiagramSVG(node, level) {
   // far node via the extIds set — NOT any edge property.
   const isExtEndpoint = (e, idKey) => extIds.has(e[idKey]);
 
-  // Collect connections for one direction, deduped by the far node. Only edges
-  // whose kind is a flow edge (edgeIsFlow) are shown — structural/contains-only
-  // links stay hidden, as on the main map.
+  // Collect connections for one direction, deduped by the far node. The popup is
+  // the detailed view, so it shows EVERY edge kind (uses / reexports / contains)
+  // — unlike the main map, which draws only flow edges. Each card's kind row
+  // then labels which kinds connect it.
   const collectConns = (edgeArr, idKey) => {
     const byNode = new Map();
     for (const e of edgeArr) {
@@ -66,11 +67,8 @@ function buildDiagramSVG(node, level) {
       if (isExtEndpoint(e, idKey)) rec.ext = true;
     }
     const internal = [], external = [];
-    for (const rec of byNode.values()) {
-      const hasFlow = [...rec.kinds].some(k => edgeIsFlow(level, k));
-      if (!hasFlow) continue;                  // no flow edges → not shown
+    for (const rec of byNode.values())
       (rec.ext ? external : internal).push(rec);
-    }
     return { internal, external };
   };
 
@@ -218,19 +216,23 @@ function buildDiagramSVG(node, level) {
   // Escape a string for use inside a double-quoted SVG/HTML attribute.
   const escA = s => esc(s).replace(/"/g, '&quot;');
 
-  // Build the edge-kind slot row for a side card. The edge_kinds dictionary
-  // drives the slots dynamically — only flow kinds with a label are shown.
+  // Build the edge-kind slot row for a side card. Shows every edge kind that
+  // connects this neighbour (uses / reexport / contains) as a labelled,
+  // hover-described slot; the edge_kinds dictionary drives the labels/tooltips.
   const buildKindRow = (item, x, y) => {
-    // Collect all flow-kind keys present on this item.
-    const flowKindKeys = [...(item.kinds || [])].filter(k => edgeIsFlow(level, k));
-    if (flowKindKeys.length === 0) return '';
+    const kindKeys = [...(item.kinds || [])];
+    if (kindKeys.length === 0) return '';
     const thirdW = SNW / 3;
-    // We show up to 3 slots (the first 3 flow kinds that appear on this item).
-    const shown = flowKindKeys.slice(0, 3);
+    // Up to 3 slots (uses / reexports / contains all fit).
+    const shown = kindKeys.slice(0, 3);
     return shown.map((k, i) => {
       const label = edgeKindLabel(level, k);
       const desc  = edgeKindDesc(level, k);
-      return `<text class="sn-detail sn-hint" data-tip="${escA(desc)}" x="${x + thirdW * (i + 0.5)}" y="${y+SNH-7}" text-anchor="middle" font-size="8" fill="#5c7a96">${esc(label)}</text>`;
+      // Non-flow kinds (reexports / contains) carry no metric, so they would be
+      // invisible on the map and easy to miss — show their label always. Flow
+      // kinds (uses) stay in the hover detail next to the metric.
+      const cls = edgeIsFlow(level, k) ? 'sn-detail sn-hint' : 'sn-hint';
+      return `<text class="${cls}" data-tip="${escA(desc)}" x="${x + thirdW * (i + 0.5)}" y="${y+SNH-7}" text-anchor="middle" font-size="8" fill="#5c7a96">${esc(label)}</text>`;
     }).join('');
   };
 
@@ -337,8 +339,11 @@ function buildDiagramSVG(node, level) {
       const stroke = c.ext ? '#9aa0a6' : '#4d6f9c';
       const marker = c.ext ? 'ah-ext' : 'ah';
       s += `<line x1="${cx}" y1="${c.y + c.h}" x2="${cx}" y2="${MNY}" stroke="${stroke}" stroke-width="1.5" marker-end="url(#${marker})"/>`;
-      if (!c.ext && c.kind !== 'contains' && c.all.length > 0)
-        s += `<text x="${cx+5}" y="${my+4}" font-family="system-ui,sans-serif" font-size="10" fill="#5c7a96">Fan-in: ${node.fan_in != null ? node.fan_in : c.all.length}</text>`;
+      // Fan-in is the flow-edge metric; the column may also show non-flow
+      // neighbours (reexports / contains), so label with the metric, not the
+      // card count, and only when there is flow coupling to report.
+      if (!c.ext && node.fan_in != null && node.fan_in > 0)
+        s += `<text x="${cx+5}" y="${my+4}" font-family="system-ui,sans-serif" font-size="10" fill="#5c7a96">Fan-in: ${node.fan_in}</text>`;
     });
   }
 
@@ -359,7 +364,10 @@ function buildDiagramSVG(node, level) {
   const absFull = absPath(mnExt ? (node.path || node.id) : node.id);
   const mnCls = [mnExt ? 'diag-ext' : (selectedIds?.has(node.id) ? 'diag-selected' : ''),
                  mnCycle ? 'diag-cycle' : ''].filter(Boolean).join(' ');
-  s += `<g class="mn-card${mnCls ? ' ' + mnCls : ''}" data-node-id="${esc(node.id)}" data-copy="${esc(copyVal)}">`;
+  // Copying is per-label (each `.mn-copy` text copies its own value on click),
+  // not whole-card — so a stray click on the card never copies. `copyVal` is kept
+  // only as the initial "copied" preview text.
+  s += `<g class="mn-card${mnCls ? ' ' + mnCls : ''}" data-node-id="${esc(node.id)}">`;
   s += `<rect x="${MNX}" y="${MNY}" width="${MNW}" height="${MNH2}" rx="10" fill="${mnFill}" stroke="${mnStroke}" stroke-width="${mnCycle ? '3' : '2'}"/>`;
   s += `<g class="mn-card-body" clip-path="url(#mn-clip)">`;
 
@@ -368,7 +376,7 @@ function buildDiagramSVG(node, level) {
     // generically via attrLabel (no hardcoded key names or tool-specific copy).
     const extName = node.name || node.id;
     let ey = MNY + 58;
-    s += `<text ${mono} x="${MNX+MNW/2}" y="${MNY+28}" text-anchor="middle" font-size="16" font-weight="700" fill="#1a2f45">${esc(trunc(extName, 36))}</text>`;
+    s += `<text class="mn-copy" data-copy="${escA(extName)}" ${mono} x="${MNX+MNW/2}" y="${MNY+28}" text-anchor="middle" font-size="16" font-weight="700" fill="#1a2f45">${esc(trunc(extName, 36))}</text>`;
     // Always show kind.
     const kindDesc = nodeKindSpec(level, node.kind).label || node.kind || 'external';
     s += `<text class="sn-hint" data-tip-title="${escA(attrLabel(level, 'external'))}" data-tip="${escA(attrDesc(level, 'external'))}" ${mono} x="${MNX+14}" y="${ey}" font-size="14" fill="#2c3e50"><tspan font-weight="700">kind: </tspan>${esc(node.kind || 'external')}</text>`;
@@ -382,21 +390,21 @@ function buildDiagramSVG(node, level) {
       ey += 22;
       // Card keeps the compact `{registry}`/`{cargo}` token form; the tooltip
       // shows the expanded on-disk location.
-      s += `<text class="sn-hint" data-tip-title="${escA(attrLabel(level, 'path') || 'Path')}" data-tip="${escA(absFull || node.path)}" ${mono} x="${MNX+14}" y="${ey}" font-size="14" fill="#2c3e50"><tspan font-weight="700">path: </tspan>${esc(mnValTrunc('path: ', node.path))}</text>`;
+      s += `<text class="sn-hint mn-copy" data-copy="${escA(node.path)}" data-tip-title="${escA(attrLabel(level, 'path') || 'Path')}" data-tip="${escA(absFull || node.path)}" ${mono} x="${MNX+14}" y="${ey}" font-size="14" fill="#2c3e50"><tspan font-weight="700">path: </tspan>${esc(mnValTrunc('path: ', node.path))}</text>`;
     }
   } else {
-    s += `<text ${mono} x="${MNX+MNW/2}" y="${MNY+28}" text-anchor="middle" font-size="16" font-weight="700" fill="#1a2f45">${esc(trunc(node.name||node.id, 36))}</text>`;
+    s += `<text class="mn-copy" data-copy="${escA(node.name||node.id)}" ${mono} x="${MNX+MNW/2}" y="${MNY+28}" text-anchor="middle" font-size="16" font-weight="700" fill="#1a2f45">${esc(trunc(node.name||node.id, 36))}</text>`;
     // Visibility shown in the card only when NOT public.
     const visStr = typeof node.visibility === 'string' && node.visibility !== 'public'
       ? node.visibility : null;
     let my = MNY + 58;
     if (visStr) {
-      s += `<text ${mono} x="${MNX+14}" y="${my}" font-size="14" fill="#2c3e50"><tspan font-weight="700">visibility: </tspan>${esc(visStr)}</text>`;
+      s += `<text class="mn-copy" data-copy="${escA(visStr)}" ${mono} x="${MNX+14}" y="${my}" font-size="14" fill="#2c3e50"><tspan font-weight="700">visibility: </tspan>${esc(visStr)}</text>`;
       my += 22;
     }
     // Tooltip shows the absolute on-disk path (the displayed value is the
     // project-relative, truncated path).
-    s += `<text class="sn-hint" data-tip-title="${escA(attrLabel(level, 'path') || 'Path')}" data-tip="${escA(absFull || nodePath)}" ${mono} x="${MNX+14}" y="${my}" font-size="14" fill="#2c3e50"><tspan font-weight="700">path: </tspan>${esc(mnValTrunc('path: ', nodePath))}</text>`;
+    s += `<text class="sn-hint mn-copy" data-copy="${escA(nodePath)}" data-tip-title="${escA(attrLabel(level, 'path') || 'Path')}" data-tip="${escA(absFull || nodePath)}" ${mono} x="${MNX+14}" y="${my}" font-size="14" fill="#2c3e50"><tspan font-weight="700">path: </tspan>${esc(mnValTrunc('path: ', nodePath))}</text>`;
     my += 22;
 
     // Primary card metric row
@@ -408,7 +416,7 @@ function buildDiagramSVG(node, level) {
       const tipDesc    = escA(attrDesc(level, primaryKey));
       const tipFormula = attrFormula(level, primaryKey) ? ` data-tip-formula="${escA(attrFormula(level, primaryKey))}"` : '';
       const tipCalc    = calcDisplay(level, primaryKey, node) ? ` data-tip-calc="${escA(calcDisplay(level, primaryKey, node))}"` : '';
-      s += `<text class="sn-hint" data-tip-title="${tipTitle}" data-tip="${tipDesc}"${tipFormula}${tipCalc} ${mono} x="${MNX+14}" y="${my}" font-size="14" fill="#2c3e50"><tspan font-weight="700">${esc(primName)}: </tspan>${esc(primFmt)}</text>`;
+      s += `<text class="sn-hint mn-copy" data-copy="${escA(primFmt)}" data-tip-title="${tipTitle}" data-tip="${tipDesc}"${tipFormula}${tipCalc} ${mono} x="${MNX+14}" y="${my}" font-size="14" fill="#2c3e50"><tspan font-weight="700">${esc(primName)}: </tspan>${esc(primFmt)}</text>`;
       my += 22;
     }
 
@@ -419,12 +427,12 @@ function buildDiagramSVG(node, level) {
       const secName = attrShort(level, secondaryKey).toLowerCase();
       const tipTitle = escA(attrName(level, secondaryKey));
       const tipDesc  = escA(attrDesc(level, secondaryKey));
-      s += `<text class="sn-hint" data-tip-title="${tipTitle}" data-tip="${tipDesc}" ${mono} x="${MNX+14}" y="${my}" font-size="14" fill="#2c3e50"><tspan font-weight="700">${esc(secName)}: </tspan>${esc(secFmt)}</text>`;
+      s += `<text class="sn-hint mn-copy" data-copy="${escA(secFmt)}" data-tip-title="${tipTitle}" data-tip="${tipDesc}" ${mono} x="${MNX+14}" y="${my}" font-size="14" fill="#2c3e50"><tspan font-weight="700">${esc(secName)}: </tspan>${esc(secFmt)}</text>`;
     }
   }
   s += `</g>`;
   // Shown for ~1s after a copy (the body is hidden meanwhile, see index.css):
-  s += `<text class="mn-copied-msg" ${mono} x="${MNX+MNW/2}" y="${MNY+MNH2/2-8}" text-anchor="middle" font-size="11" fill="#5c7a96">${esc(mnValTrunc('', copyVal))}</text>`;
+  s += `<text class="mn-copied-msg mn-copied-val" ${mono} x="${MNX+MNW/2}" y="${MNY+MNH2/2-8}" text-anchor="middle" font-size="11" fill="#5c7a96">${esc(mnValTrunc('', copyVal))}</text>`;
   s += `<text class="mn-copied-msg" ${mono} x="${MNX+MNW/2}" y="${MNY+MNH2/2+18}" text-anchor="middle" font-size="20" font-weight="700" fill="#4d6f9c">copied</text>`;
   s += `</g>`;
 
@@ -436,8 +444,11 @@ function buildDiagramSVG(node, level) {
       const stroke = c.ext ? '#9aa0a6' : '#4d6f9c';
       const marker = c.ext ? 'ah-ext' : 'ah';
       s += `<line x1="${cx}" y1="${MNY+MNH2}" x2="${cx}" y2="${c.y}" stroke="${stroke}" stroke-width="1.5" marker-end="url(#${marker})"/>`;
-      if (!c.ext && c.kind !== 'contains' && c.all.length > 0)
-        s += `<text x="${cx+5}" y="${my+4}" font-family="system-ui,sans-serif" font-size="10" fill="#5c7a96">Fan-out: ${node.fan_out != null ? node.fan_out : c.all.length}</text>`;
+      // Fan-out is the flow-edge metric; the column may also show non-flow
+      // neighbours (reexports / contains), so label with the metric, not the
+      // card count, and only when there is flow coupling to report.
+      if (!c.ext && node.fan_out != null && node.fan_out > 0)
+        s += `<text x="${cx+5}" y="${my+4}" font-family="system-ui,sans-serif" font-size="10" fill="#5c7a96">Fan-out: ${node.fan_out}</text>`;
       s += renderCol(c);
     });
   }
@@ -821,7 +832,15 @@ function drawSVG(svgFrame, nodes, edges, level) {
       `</div>`;
     svgFrame.querySelector('.too-many-btn').addEventListener('click', () => {
       svgFrame.dataset.bigConfirmed = '1';
-      renderSVGNow(svgFrame, nodes, edges, level);
+      // Show the same "Computing layout…" indicator as a mode switch, and defer
+      // the (slow, blocking) graphviz layout one tick so the indicator actually
+      // paints before the main thread is busy.
+      const loading = svgFrame.closest('[data-view]')?.querySelector('.loading-indicator');
+      if (loading) { loading.textContent = 'Computing layout…'; loading.classList.add('on'); }
+      setTimeout(() => {
+        renderSVGNow(svgFrame, nodes, edges, level);
+        if (loading) loading.classList.remove('on');
+      }, 30);
     });
     return;
   }

@@ -377,12 +377,21 @@ function renderDescTooltip(label, desc, formula, calc) {
   const f = formula ? `<div class="tt-formula">${escHtml(formula)}</div>` : '';
   // `calc` is the same formula filled with this node's real values.
   const c = calc ? `<div class="tt-formula tt-calc">${escHtml(calc)}</div>` : '';
-  return `<div class="tt-title">${escHtml(label)}</div>${f}${c}<div class="tt-desc">${escHtml(desc)}</div>`;
+  // Descriptions are authored text (plugin specs). Everything is escaped first;
+  // then two bits of light markup are re-enabled: `<br>` for line breaks, and
+  // `` `code` `` spans (rendered highlighted and kept on one line — no wrap).
+  const descHtml = escHtml(desc)
+    .replace(/&lt;br\s*\/?&gt;/gi, '<br>')
+    .replace(/`([^`]+)`/g, '<code class="tt-code">$1</code>');
+  return `<div class="tt-title">${escHtml(label)}</div>${f}${c}<div class="tt-desc">${descHtml}</div>`;
 }
 
 function setupTooltip() {
   const tt = document.getElementById('tt');
   let current = null;
+  let showTimer = null;
+  let lastX = 0, lastY = 0;
+  const SHOW_DELAY = 300;  // ms before a tooltip appears — avoids flicker on passing hovers
 
   // Tooltip title = the metric's full name from schema; falls back to the
   // element's own text.
@@ -393,7 +402,18 @@ function setupTooltip() {
     return el.textContent.trim();
   };
 
-  document.addEventListener('mouseover', e => {
+  const position = () => {
+    const pad = 14;
+    const tw = tt.offsetWidth, th = tt.offsetHeight;
+    let x = lastX + pad, y = lastY + pad;
+    if (x + tw > window.innerWidth  - 8) x = lastX - tw - pad;
+    if (y + th > window.innerHeight - 8) y = lastY - th - pad;
+    tt.style.left = x + 'px';
+    tt.style.top  = y + 'px';
+  };
+
+  // Resolve the tooltip content for the hovered element, or null if none applies.
+  const contentFor = e => {
     const cellTt  = e.target.closest('[data-tt]');
     const cellTip = e.target.closest('[data-tip]');
     const cellNum = e.target.closest('td[data-col]');
@@ -402,56 +422,60 @@ function setupTooltip() {
       // fall back to the row's first cell (summary table, metric-per-row).
       const label = cellTt.dataset.tipTitle
         || cellTt.closest('tr')?.querySelector('td:first-child')?.textContent || '';
-      tt.innerHTML = renderTooltip(label, cellTt.dataset.tt);
-      tt.removeAttribute('hidden');
-      current = cellTt;
-    } else if (cellTip && cellTip.dataset.tip) {
-      tt.innerHTML = renderDescTooltip(titleOf(cellTip, null), cellTip.dataset.tip, cellTip.dataset.tipFormula, cellTip.dataset.tipCalc);
-      tt.removeAttribute('hidden');
-      current = cellTip;
-    } else if (cellNum) {
+      return { el: cellTt, html: renderTooltip(label, cellTt.dataset.tt) };
+    }
+    if (cellTip && cellTip.dataset.tip) {
+      return { el: cellTip, html: renderDescTooltip(titleOf(cellTip, null), cellTip.dataset.tip, cellTip.dataset.tipFormula, cellTip.dataset.tipCalc) };
+    }
+    if (cellNum) {
       // Value cells carry no precomputed tooltip — derive it on hover only, so we
-      // never build a tooltip string for a cell the user never points at. Every
-      // metric column gets the description + formula (where one exists); the
-      // per-node computation is added for metrics whose inputs are stored.
+      // never build a tooltip string for a cell the user never points at.
       const id  = cellNum.dataset.col;
-      // Determine the active level from the closest section (sections use data-view).
       const lv  = cellNum.closest('[data-view]')?.dataset.view || 'files';
       const desc = attrDesc(lv, id);
-      if (!desc) return;  // no description — skip synthetic / unknown columns
+      if (!desc) return null;  // no description — skip synthetic / unknown columns
       const formula = attrFormula(lv, id);
       const nid  = cellNum.closest('tr[data-node-id]')?.dataset.nodeId;
       const node = nid ? activeGraph(lv).nodes.find(n => n.id === nid) : null;
       const calc = node ? calcDisplay(lv, id, node) : '';
-      tt.innerHTML = renderDescTooltip(titleOf(cellNum, lv), desc, formula, calc);
-      tt.removeAttribute('hidden');
-      current = cellNum;
+      return { el: cellNum, html: renderDescTooltip(titleOf(cellNum, lv), desc, formula, calc) };
     }
+    return null;
+  };
+
+  const cancelShow = () => { if (showTimer) { clearTimeout(showTimer); showTimer = null; } };
+
+  document.addEventListener('mouseover', e => {
+    const r = contentFor(e);
+    if (!r || r.el === current) return;     // nothing to show, or already showing it
+    cancelShow();
+    showTimer = setTimeout(() => {
+      showTimer = null;
+      tt.innerHTML = r.html;
+      tt.removeAttribute('hidden');
+      current = r.el;
+      position();
+    }, SHOW_DELAY);
   });
 
   document.addEventListener('mouseout', e => {
     const cell = e.target.closest('[data-tt]') || e.target.closest('[data-tip]') || e.target.closest('td[data-col]');
-    if (cell && cell === current) {
-      tt.setAttribute('hidden', '');
-      current = null;
-    }
+    if (!cell) return;
+    // Ignore moves that stay inside the same element (into a child node).
+    if (e.relatedTarget && cell.contains(e.relatedTarget)) return;
+    cancelShow();
+    if (cell === current) { tt.setAttribute('hidden', ''); current = null; }
   });
 
   document.addEventListener('mousemove', e => {
-    if (tt.hasAttribute('hidden')) return;
-    const pad = 14;
-    const tw = tt.offsetWidth, th = tt.offsetHeight;
-    let x = e.clientX + pad, y = e.clientY + pad;
-    if (x + tw > window.innerWidth  - 8) x = e.clientX - tw - pad;
-    if (y + th > window.innerHeight - 8) y = e.clientY - th - pad;
-    tt.style.left = x + 'px';
-    tt.style.top  = y + 'px';
+    lastX = e.clientX; lastY = e.clientY;
+    if (!tt.hasAttribute('hidden')) position();
   });
 
   // Force-hide the tooltip. Needed because navigating between popup nodes (or
   // closing the modal) replaces the hovered element without firing `mouseout`,
   // which would otherwise leave a stale tooltip floating over the new content.
-  const hide = () => { tt.setAttribute('hidden', ''); current = null; };
+  const hide = () => { cancelShow(); tt.setAttribute('hidden', ''); current = null; };
   window.hideMetricTooltip = hide;
   // Any click (opening a node from the map/table, navigating between popup
   // cards, closing the modal) clears the tooltip.

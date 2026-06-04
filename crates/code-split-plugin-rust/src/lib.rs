@@ -32,7 +32,14 @@ impl LanguagePlugin for RustPlugin {
                 flow: true,
                 label: Some("uses".into()),
                 description: Some(
-                    "Import / use dependency — this file uses items from the other.".into(),
+                    "Code dependency — this file references an item the target file defines.<br>\
+                     Captured from `use path::Item;`, a qualified path (`crate::a::Item`, \
+                     `other_crate::Item`), or a derive (`#[derive(serde::Serialize)]`).<br>\
+                     The path resolves to the file that defines the item (following `pub use` \
+                     re-exports), so the edge points at the definition, not a re-export hub.<br>\
+                     This is the real dependency: it counts toward fan-in / fan-out, \
+                     Henry-Kafura coupling and cycles."
+                        .into(),
                 ),
             },
         );
@@ -42,7 +49,12 @@ impl LanguagePlugin for RustPlugin {
                 flow: false,
                 label: Some("contains".into()),
                 description: Some(
-                    "Module declaration (mod foo;) — structural ownership; excluded from fan-in / HK / cycles.".into(),
+                    "Module ownership — the parent declares the child module \
+                     (`mod foo;` / `pub mod foo;`), so `foo.rs` (or `foo/mod.rs`) belongs to it.<br>\
+                     This is the Rust module tree: structure, not a code dependency.<br>\
+                     Kept in the data but not drawn on the main map, and excluded from \
+                     fan-in / fan-out / HK / cycles."
+                        .into(),
                 ),
             },
         );
@@ -52,7 +64,15 @@ impl LanguagePlugin for RustPlugin {
                 flow: false,
                 label: Some("reexport".into()),
                 description: Some(
-                    "Re-export (pub use) — re-exposes the other file's items as part of its own API. A facade, not a dependency: kept in the JSON but not drawn and excluded from fan-in / HK / cycles (the `pub use` info still drives use-resolution to the defining file).".into(),
+                    "Re-export (`pub use foo::Item;`) — re-publishes another file's item as part of \
+                     this file's public API (the crate-root / prelude facade, e.g. `lib.rs` doing \
+                     `pub use access_scope::AccessScope;`).<br>\
+                     A facade, not a dependency: excluded from fan-in / fan-out / HK / cycles and \
+                     not drawn on the main map, like `contains`.<br>\
+                     A consumer's `use this_crate::Item` is attributed to the file that defines \
+                     `Item`, so re-export hubs (`lib.rs` / `mod.rs`) collect no false coupling — the \
+                     `pub use` is still recorded here so you can see what a file exposes."
+                        .into(),
                 ),
             },
         );

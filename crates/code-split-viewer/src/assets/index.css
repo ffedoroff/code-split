@@ -184,7 +184,9 @@ main { padding: 16px 24px 40px; }
 .nm-copy-btn:hover { background: #e8edf2; border-color: #aab; color: #555; }
 /* SVG main card: click anywhere on it to copy the path (id for libraries). The
    `copy` cursor signals this; a successful copy flashes the card border green. */
-.mn-card { cursor: pointer; }
+.mn-card { cursor: default; }
+/* Only the individual labels copy on click (title + each `key: value` row). */
+#node-modal-diagram .mn-copy { cursor: copy; }
 /* On copy: hide the card body and show a centred "copied" message for ~1s. */
 .mn-copied-msg { display: none; }
 .mn-card.copied .mn-card-body { display: none; }
@@ -194,13 +196,11 @@ main { padding: 16px 24px 40px; }
 g[data-diag-node] .sn-detail { display: none; }
 g[data-diag-node]:hover .sn-simple { display: none; }
 g[data-diag-node]:hover .sn-detail { display: inline; }
-/* Hoverable metric / connection-kind labels inside popup cards: a help cursor,
-   and a slight colour + weight bump on the exact label the tooltip describes. */
-/* Keep the card's own cursor — don't switch to a help cursor over a tooltip
-   label (overrides the global `[data-tip] { cursor: help }`). */
+/* Hoverable metric / connection-kind labels inside popup cards.
+   Keep the card's own cursor — don't switch to a help cursor over a tooltip
+   label (overrides the global `[data-tip] { cursor: help }`). The text/fill is
+   intentionally NOT changed on hover (no highlight): only the tooltip appears. */
 text.sn-hint, tspan.sn-hint, g.sn-hint { cursor: inherit; }
-text.sn-hint:hover, tspan.sn-hint:hover { fill: #2f6fb3; font-weight: 700; }
-g.sn-hint:hover rect { fill: #d4c39a; }
 #nm-tooltip { display: none; position: fixed; z-index: 30000;
               background: #2c3e50; color: #ecf0f1;
               font-size: 12px; line-height: 1.45;
@@ -265,6 +265,10 @@ g.sn-hint:hover rect { fill: #d4c39a; }
 [data-tt] { cursor: help; border-bottom: 1px dashed rgba(100,120,140,.35); }
 [data-tip] { cursor: help; }
 .tt-desc { color: #c8d8e8; font-size: 12px; line-height: 1.55; margin-top: 2px; }
+/* Inline `code` spans inside a description: highlighted and never wrapped. */
+.tt-desc .tt-code { white-space: nowrap; font-family: ui-monospace, 'SF Mono', monospace;
+                    font-size: 11px; color: #e8eef5; background: rgba(126,200,227,0.16);
+                    border-radius: 3px; padding: 0 4px; }
 /* Metric formula on its own bold line, never wrapped mid-expression. */
 .tt-formula { font-weight: 700; color: #e8eef5; white-space: nowrap;
               margin: 4px 0 6px; font-size: 11px;

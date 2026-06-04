@@ -56,8 +56,15 @@ document.addEventListener('click', e => {
     return;   // a modifier click never copies
   }
 
-  if (!card.dataset.copy) return;
-  navigator.clipboard.writeText(card.dataset.copy).then(() => {
+  // Plain click copies only when it lands on a specific label (`.mn-copy` — the
+  // title or a `key: value` row), each copying its own value. A click on the
+  // bare card never copies.
+  const lbl = e.target.closest('.mn-copy');
+  if (!lbl || lbl.dataset.copy == null) return;
+  const val = lbl.dataset.copy;
+  navigator.clipboard.writeText(val).then(() => {
+    const preview = card.querySelector('.mn-copied-val');
+    if (preview) preview.textContent = val.length > 48 ? val.slice(0, 47) + '…' : val;
     card.classList.add('copied');
     setTimeout(() => card.classList.remove('copied'), 1000);
   });
