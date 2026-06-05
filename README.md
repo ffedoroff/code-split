@@ -10,11 +10,36 @@
 
 Structural-analysis tool for **Rust, Python, JavaScript and TypeScript** codebases. Built **AI-agent-friendly first** — finds where a project has structural problems and hands an actionable shortlist to a human or an AI agent for the actual refactor.
 
+**👉 Map your codebase's worst structural problems in 30 seconds — [jump to the Rust quick start](#rust-quick-start) and run it on your repo now.**
+
 **Status:** pre-alpha. APIs and output shapes may change without notice. Pin a specific version.
+
+## Rust quick start
+
+```sh
+cargo install code-split --version 1.0.0-alpha.4   # install the CLI
+code-split report .                                # make html report in .code-split/ folder
+```
+
+`report .` needs no flags: it writes a self-contained HTML report (plus a JSON
+snapshot) into `.code-split/`. Open the latest `…-<commit>.html` to explore the
+dependency graph, per-file metrics, and the AI prompt generator. Everything
+below is detail.
 
 ## Offline & private
 
 code-split always runs **entirely on your machine**. It makes **no network calls**, sends **no telemetry or analytics**, and **never uploads your code or analysis results** anywhere. Generated HTML reports are self-contained — no CDN, no external requests, no tracking.
+
+## AI agents friendly
+
+**Hand your codebase to an AI agent and let it fix the worst spot.** code-split is built to feed work straight to an AI coding agent (Claude Code, Cursor, …). Attach the short playbook [docs/ai-skill.md](docs/ai-skill.md) to your agent's context — it teaches the agent which two metrics matter (dependency cycles `ADP`, coupling `HK`) and the exact fix loop (scorecard → snapshot → fix → re-check → before/after report).
+
+Then just ask, e.g.:
+
+- *"Read `ai-skill.md`. Find the worst dependency cycle in this project and propose a refactor that breaks it — show me the plan before changing code."*
+- *"Read `ai-skill.md`. Find the most complex / highest-HK file and analyze how to split it; explain what the split buys (lower coupling, smaller blast radius). Take a **before report**, apply the split, take an **after report**, and show me the **HTML diff**."*
+
+The agent drives the CLI itself — `ai-skill.md` already spells out the commands and the loop, so no glue is needed.
 
 ## What it finds
 
@@ -35,6 +60,8 @@ code-split check . \
 ```
 
 The linter is the `check` command — exits non-zero on any cycle or threshold violation, e.g. a PR that introduces a new file-level cycle or a file above your LOC limit (`mutual` and `chain` cycle checks are on by default). See [docs/CLI.md](docs/code-split-cli/CLI.md) for all flags.
+
+**Add it to your pipeline today** — one `code-split check` step stops new cycles and bloat from ever landing.
 
 ## Full CLI
 
@@ -106,9 +133,18 @@ Built-in plugins: `rust` (cargo + syn), `python`, `javascript` (also handles Typ
 - [CLI](docs/code-split-cli/CLI.md) — commands, flags, and examples
 - [Rule reference](docs/code-split-cli/ERRORS.md) — rule ids grouped by concern (`CYC`/`CPX`/`CPL`/`SIZ`), per-file thresholds (`file`), what each flags, and how to fix it
 - [Config](docs/code-split-cli/config.md) — `code-split.toml` schema
+- [AI agent skill](docs/ai-skill.md) — a short playbook to attach to an AI agent's context (the ADP/HK fix loop)
 - [PRD](docs/PRD.md) — product requirements
 - [DESIGN](docs/DESIGN.md) — technical design
 - [Principles corpus](principles/) — Rust / Python / TypeScript principle catalogues used by the prompt generator
+
+## Try it now
+
+```sh
+cargo install code-split --version 1.0.0-alpha.4 && code-split report . && open .code-split/
+```
+
+One command on any Rust project — you'll have an interactive structural map and an AI-ready shortlist in seconds. ⭐ the repo if it helps.
 
 ## License
 
