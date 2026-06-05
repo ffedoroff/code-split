@@ -245,6 +245,122 @@ fn run_report_capture(lang: &str, extra: &[&str]) -> (bool, String, String) {
     )
 }
 
+/// Run `check` on a language sample with its own config, capturing the outcome.
+fn run_check_capture(lang: &str, extra: &[&str]) -> (bool, String, String) {
+    let root = repo_root();
+    let sample = sample_dir(lang);
+    let out = Command::new(env!("CARGO_BIN_EXE_code-split"))
+        .current_dir(&root)
+        .env("CARGO_NET_OFFLINE", "true")
+        .arg("check")
+        .arg(&sample)
+        .arg("--config")
+        .arg(sample.join("code-split.toml"))
+        .args(extra)
+        .output()
+        .expect("spawn code-split");
+    (
+        out.status.success(),
+        String::from_utf8_lossy(&out.stdout).into_owned(),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+    )
+}
+
+/// `check` is the gate. The Rust sample has an a ⇄ b mutual cycle, so the default
+/// run fails (exit non-zero) and prints a self-contained human diagnostic.
+#[test]
+fn rust_sample_check_human_diagnostic() {
+    let (ok, stdout, stderr) = run_check_capture("rust", &[]);
+    assert!(!ok, "gate fails on the mutual cycle: {stderr}");
+    let out = format!("{stdout}{stderr}");
+    assert!(
+        out.contains("cycle.mutual") && out.contains("a.rs") && out.contains("b.rs"),
+        "human diagnostic names the cycle members: {out}"
+    );
+}
+
+/// `--output-format json` emits the machine-readable violation list.
+#[test]
+fn rust_sample_check_json_violations() {
+    let (_ok, stdout, stderr) = run_check_capture("rust", &["--output-format", "json"]);
+    let v: Value = serde_json::from_str(&stdout).unwrap_or_else(|e| panic!("json: {e}: {stderr}"));
+    let first = &v.as_array().expect("array")[0];
+    assert_eq!(first["rule"], "cycle.mutual");
+    assert_eq!(first["graph"], "files");
+}
+
+/// `--output-format sarif` emits a SARIF 2.1.0 document.
+#[test]
+fn rust_sample_check_sarif() {
+    let (_ok, stdout, _e) = run_check_capture("rust", &["--output-format", "sarif"]);
+    let v: Value = serde_json::from_str(&stdout).expect("sarif json");
+    assert!(
+        v["$schema"].as_str().unwrap_or_default().contains("sarif"),
+        "sarif schema present: {stdout}"
+    );
+    assert!(v["runs"].is_array(), "sarif runs array");
+}
+
+/// `--output-format github` emits `::error` workflow annotations with file/line.
+#[test]
+fn rust_sample_check_github_annotations() {
+    let (_ok, stdout, stderr) = run_check_capture("rust", &["--output-format", "github"]);
+    let out = format!("{stdout}{stderr}");
+    assert!(
+        out.contains("::error") && out.contains("cycle.mutual"),
+        "github annotation: {out}"
+    );
+}
+
+/// `--suggest-config` prints today's measured values as paste-ready TOML blocks.
+#[test]
+fn rust_sample_check_suggest_config() {
+    let (_ok, stdout, _e) = run_check_capture("rust", &["--suggest-config"]);
+    assert!(
+        stdout.contains("[rules.cycles]") && stdout.contains("[rules.thresholds.file]"),
+        "suggested config blocks: {stdout}"
+    );
+    assert!(
+        stdout.contains("mutual") && stdout.contains("chain"),
+        "cycle rules listed: {stdout}"
+    );
+}
+
+/// A `--baseline` run computes a relative verdict; against itself it is `neutral`
+/// (no new violations).
+#[test]
+fn rust_sample_check_baseline_verdict_neutral() {
+    let root = repo_root();
+    let sample = sample_dir("rust");
+    let tmp = std::env::temp_dir().join("cs-e2e-baseline-rust.json");
+    // Capture a baseline snapshot.
+    let report = Command::new(env!("CARGO_BIN_EXE_code-split"))
+        .current_dir(&root)
+        .env("CARGO_NET_OFFLINE", "true")
+        .arg("report")
+        .arg(&sample)
+        .arg("--config")
+        .arg(sample.join("code-split.toml"))
+        .arg(format!("--output.json.path={}", tmp.display()))
+        .output()
+        .expect("spawn report");
+    assert!(report.status.success(), "baseline report");
+    let (_ok, stdout, stderr) = run_check_capture(
+        "rust",
+        &[
+            "--baseline",
+            tmp.to_str().unwrap(),
+            "--output-format",
+            "json",
+        ],
+    );
+    let v: Value = serde_json::from_str(&stdout).unwrap_or_else(|e| panic!("json: {e}: {stderr}"));
+    assert_eq!(
+        v["verdict"], "neutral",
+        "self-baseline is neutral: {stdout}"
+    );
+}
+
 /// The `scorecard` format streams a per-principle table + worst-module list to
 /// stdout. The Rust sample has a mutual cycle (a.rs ↔ b.rs) and no metric
 /// breaches, so ADP is the only principle with violations and tops the table.

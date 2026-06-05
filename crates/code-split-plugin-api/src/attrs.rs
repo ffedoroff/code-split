@@ -85,3 +85,26 @@ impl From<&str> for AttrValue {
         AttrValue::Str(v.to_string())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn value_type_maps_each_variant() {
+        assert_eq!(AttrValue::Bool(true).value_type(), ValueType::Bool);
+        assert_eq!(AttrValue::Int(1).value_type(), ValueType::Int);
+        assert_eq!(AttrValue::Float(1.5).value_type(), ValueType::Float);
+        assert_eq!(AttrValue::Str("x".into()).value_type(), ValueType::Str);
+    }
+
+    #[test]
+    fn from_impls_cover_each_scalar() {
+        assert_eq!(AttrValue::from(true), AttrValue::Bool(true));
+        assert_eq!(AttrValue::from(7_i64), AttrValue::Int(7));
+        assert_eq!(AttrValue::from(7_u32), AttrValue::Int(7));
+        assert_eq!(AttrValue::from(2.5_f64), AttrValue::Float(2.5));
+        assert_eq!(AttrValue::from("s".to_string()), AttrValue::Str("s".into()));
+        assert_eq!(AttrValue::from("s"), AttrValue::Str("s".into()));
+    }
+}
