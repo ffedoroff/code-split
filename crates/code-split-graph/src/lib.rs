@@ -19,6 +19,16 @@ pub mod serialize;
 pub mod snapshot;
 pub mod stats;
 
+pub use attrs::{num_attr, round_sig3};
+pub use cycles::annotate_cycles;
+pub use finalize::finalize_graph;
+pub use hk::annotate_hk;
+pub use level_graph::{CycleGroup, LevelGraph, LevelUi};
+pub use relativize::{relativize_graph, relativize_level};
+pub use serialize::{to_canonical_string, to_canonical_string_pretty};
+pub use snapshot::{GitInfo, Snapshot, StageTime};
+pub use stats::compute_stats;
+
 use code_split_plugin_api::{
     attrs::ValueType,
     level::{AttributeGroup, AttributeSpec},

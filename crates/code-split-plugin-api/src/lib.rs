@@ -40,7 +40,15 @@ pub mod log;
 pub mod node;
 pub mod plugin;
 
-use crate::level::{CycleKindSpec, NodeKindSpec};
+pub use attrs::{AttrValue, Attributes, ValueType};
+pub use edge::Edge;
+pub use graph::Graph;
+pub use level::{
+    AttributeGroup, AttributeSpec, CycleKindSpec, EdgeKindSpec, Level, NodeKindSpec, Thresholds,
+};
+pub use node::{Node, NodeId};
+pub use plugin::{LanguagePlugin, Options, PluginInput, Preset};
+
 use std::collections::BTreeMap;
 
 /// The generic node-kind palette every file-based plugin seeds its level with:
