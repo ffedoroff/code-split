@@ -8,7 +8,13 @@ function setupPanZoom(frame, svg) {
   let pan = null, didDrag = false, animFrame = null;
 
   function getVB() { return svg.getAttribute('viewBox').split(/[ ,]+/).map(Number); }
-  function setVB(x, y, w, h) { svg.setAttribute('viewBox', `${x} ${y} ${w} ${h}`); }
+  let lastVBW = ow;
+  function setVB(x, y, w, h) {
+    svg.setAttribute('viewBox', `${x} ${y} ${w} ${h}`);
+    // Zoom changes the fit factor → re-normalize arrowheads + hover-halo scale.
+    // (Pan keeps width, so this is skipped during drags.)
+    if (Math.abs(w - lastVBW) > 0.5) { lastVBW = w; window.normalizeArrows?.(frame, svg); }
+  }
 
   function animate(tx, ty, tw, th, ms) {
     if (animFrame) cancelAnimationFrame(animFrame);
@@ -140,13 +146,6 @@ function setupPanZoom(frame, svg) {
     });
     wrap.querySelector('.dig-lod [data-lod="out"]')?.addEventListener('click', () => {
       window.setDig?.(-1, wrap.closest('.view')?.dataset.view || 'files');
-    });
-
-    // Debug button: dump current node values / DOT / geometry to console + clipboard.
-    wrap.querySelector('[data-debug]')?.addEventListener('click', e => {
-      window.dumpDebug?.(wrap.closest('.view')?.dataset.view || 'files');
-      const b = e.currentTarget, t = b.textContent;
-      b.textContent = 'copied'; setTimeout(() => { b.textContent = t; }, 1000);
     });
 
     document.addEventListener('fullscreenchange', () => {

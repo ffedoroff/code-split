@@ -75,13 +75,13 @@ top-to-bottom). The viewer was split out of three former monoliths (`diagram.js`
 | File | Purpose |
 |------|---------|
 | `layout.js` | `buildDOT()` — emits the DOT for the map. Overview groups by `grouperForDig(level, window.dig)` (one node per group, deduped inter-group flow edges); each group box is labelled `name (memberCount)`, filled pink at the crate tier / white otherwise, and tagged `cycle-status-*` aggregated from its members. The drilled (focus) view filters to the focused group and renders per-file nodes (`name (fan_in+fan_out)`) with crate-relative dir sub-clusters plus **callers** (green) / **dependencies** (orange) neighbour clusters whose `edge-in`/`edge-out` edges are `constraint=false`. No `ratio=fill`/`size` (natural layout, packed spacing). Metric (SLOC/HK) sizing helpers live here too. |
-| `map-render.js` | `drawSVG()` (big-graph confirm guard, drilled views only) and `renderSVGNow()` (DOT→SVG via `window.gv`, then wires pan/zoom, the status bar, edge-highlight and tooltips; stashes the DOT in `window._lastDOT` for the debug dump). |
+| `map-render.js` | `drawSVG()` (big-graph confirm guard, drilled views only) and `renderSVGNow()` (DOT→SVG via `window.gv`, then wires pan/zoom, the status bar, edge-highlight and tooltips); `normalizeArrows()` keeps arrowheads a constant on-screen size regardless of fit/zoom. |
 
 ### Map interactions
 
 | File | Purpose |
 |------|---------|
-| `map-interactions.js` | All behaviour on the main SVG map: node selection + the platform open-source modifier (`isOpenSrcClick`, ⌘/Ctrl), the shortcut legend (`kbdHintsHtml`), **drill** nav (`drillIntoGroup`/`drillOutOfGroup`) and **relative-dig** (`setDig`/`updateDigLabel`), the status bar (`statusLineFor`/`statusLineForGroup`), `setupEdgeHighlight(svgFrame, level)` (must run **before** `setupTooltips`, which removes SVG `<title>`s), `setupTooltips`, and the `dumpDebug` console+clipboard dump (`debug` button / `d` key). |
+| `map-interactions.js` | All behaviour on the main SVG map: node selection + the platform open-source modifier (`isOpenSrcClick`, ⌘/Ctrl), the shortcut legend (`kbdHintsHtml`), **drill** nav (`drillIntoGroup`/`drillOutOfGroup`) and **relative-dig** (`setDig`/`updateDigLabel`), the status bar (`statusLineFor`/`statusLineForGroup`), `setupEdgeHighlight(svgFrame, level)` (must run **before** `setupTooltips`, which removes SVG `<title>`s), `setupTooltips`. |
 | `panzoom.js` | `setupPanZoom()` — viewBox drag-to-pan, +/−/fit/fullscreen buttons, the SLOC/HK metric-size row, the drill-back button, and the **zoom-lod** (−/+) buttons that call `setZoom`. |
 
 ### Node modal / popup
@@ -126,7 +126,7 @@ top-to-bottom). The viewer was split out of three former monoliths (`diagram.js`
 
 | File | Purpose |
 |------|---------|
-| `index.html` | The shell: one `<header>` row (brand, title, two snapshot controls + a toggle), the single Files `.view` with `.frame-wrap` (svg frame, drill breadcrumb, **dig** control (`.dig-lod`) top-left, zoom/size controls, kbd legend, `debug` button), and the collapsible summary. |
+| `index.html` | The shell: one `<header>` row (brand, title, two snapshot controls + a toggle), the single Files `.view` with `.frame-wrap` (svg frame, drill breadcrumb, **dig** control (`.dig-lod`) top-left, zoom/size controls, kbd legend), and the collapsible summary. |
 | `base.css` · `map.css` · `modal.css` · `tables.css` · `export.css` · `snap.css` · `map-svg.css` | The former `index.css` split by concern; concatenated in `lib.rs` **in source order** into one inlined `<style>` (preserving the cascade, no extra requests → keeps the offline guarantee). `map-svg.css` holds the graphviz node/edge state rules: visibility toggles, **cycle red stroke** (side-gated), selection, hover, status bar and edge highlight. |
 
 ## Relative dig (level-of-detail)
@@ -167,10 +167,15 @@ inter-node gaps small instead of being stretched. Caller/dependency (`edge-in` /
 `edge-out`) edges are `constraint=false` so they draw without dragging the layout
 vertically.
 
-**Debug**: the `debug` button (and the `d` key) calls `window.dumpDebug`, which
-prints the view state, generated DOT, rendered node/edge geometry and node data to
-the console and copies the same text dump to the clipboard. `map-render.js` keeps
-the last DOT in `window._lastDOT`.
+**Zoom-invariant line weight**: because the SVG scales to fit the frame, a small
+graph (e.g. one collapsed node) is blown up and 1px borders/edges would balloon.
+`map-svg.css` sets `vector-effect: non-scaling-stroke` on map shapes so **stroke
+widths stay constant** on screen, and the blue hover halo's blur is scaled by a
+`--zk` custom property (the fit factor, set per render). Arrowheads are FILLED
+polygons (strokes don't apply), so `normalizeArrows` (`map-render.js`)
+counter-scales each around its tip and extends the edge line to the shrunk base —
+re-run on render and on every zoom step (`panzoom` calls it when the viewBox width
+changes).
 
 Not yet implemented: nested clusters at `dig +1` (crate clusters wrapping folder
 nodes) and the diagonal in/out cluster placement — see `REFACTOR-split-plan.md`.
