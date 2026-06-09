@@ -146,6 +146,7 @@ window.grouperForDig = grouperForDig;
 //  • dig OUT (dig < 0 collapse): the collapsed crate-dir path (already full).
 function groupLabel(level, key, dig) {
   const d = dig | 0;
+  if (key === '_root') return '/';   // the collapse sentinel → show the root as "/"
   if (d > 0) {
     const cut     = key.indexOf('/');
     const crate   = cut >= 0 ? key.slice(0, cut) : key;

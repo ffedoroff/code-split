@@ -56,12 +56,6 @@ function buildDiagramSVG(node, level) {
     return fmtNum(v);
   };
 
-  // Column visual config
-  const COL_STROKE = '#8ba6c0';
-  const COL_DASH   = '6,4';
-  const kindColor  = k => k === 'external' ? '#9aa0a6' : COL_STROKE;
-  const kindDash   = _k => COL_DASH;
-
   // Is the far endpoint of this edge (the node at `idKey`) external? Look at the
   // far node via the extIds set — NOT any edge property.
   const isExtEndpoint = (e, idKey) => extIds.has(e[idKey]);
@@ -92,114 +86,100 @@ function buildDiagramSVG(node, level) {
   const inConns  = collectConns(allEdges.filter(e => e.target === node.id), 'source');
   const outConns = collectConns(allEdges.filter(e => e.source === node.id), 'target');
 
-  // Layout constants
-  const SNW         = 148, SNH = 62;
-  const MNH         = 110, MNH2 = MNH + 54;
-  const CELL        = SNW + 12;          // one card-slot width
-  const COL_PAD_X   = 12;               // horizontal padding inside column box
-  const COL_GAP     = 12;              // gap between adjacent columns
-  const ROW_H       = SNH + 10;
-  const PAD_TOP     = 20;              // inside column: space above first row (below label)
-  const PAD_BOT     = 14;
-  const ARR_GAP     = 36;
-  const SIDE_PAD    = 20;
-  const MAX_TIER_COLS = 5;             // total columns across a tier's groups; overflow scrolls
-  const MARG        = 20;
-  const MNW_MIN     = 3 * CELL - 12 + 2 * COL_PAD_X;  // ≈ 492 minimum main-node width
+  // ── Layout: card blocks stacked vertically, 5 cards per row ──────────────────
+  //   external          (external callers)
+  //   crate in: a / b…  (cross-crate callers, one block per crate)
+  //   fan in            (same-crate callers)        ── arrow ──┐
+  //   [ main node ]                                            │
+  //   fan out           (same-crate dependencies)   ── arrow ──┘
+  //   crate out: c…     (cross-crate dependencies, one block per crate)
+  //   external          (external dependencies)
+  // Every block is a FIXED 5 columns wide (the main node spans the same width);
+  // height grows with the row count. Arrows connect only fan-in → node → fan-out;
+  // every other block (external, per-crate) carries no arrow.
+  const SNW = 148, SNH = 62;
+  const MNH2 = 110 + 54;
+  const COLS      = 5;            // cards per row (fixed)
+  const CARD_GAP  = 12;          // gap between cards in a row
+  const ROW_GAP   = 12;          // gap between rows in a block
+  const ROW_H     = SNH + ROW_GAP;
+  const LBL_H     = 16;          // block label strip above the cards
+  const BLOCK_GAP = 16;          // block ↔ block (no arrow)
+  const ARR_GAP   = 40;          // fan block ↔ node (arrow runs here)
+  const MARG      = 20;
+  const HPAD      = 6;           // dashed-box horizontal padding around the cards
+  const BOX_VPAD  = 6;           // dashed-box bottom padding below the last row
 
-  // Split a column budget across groups proportionally to their card counts,
-  // each group getting 1..count columns and the sum capped at min(budget, total).
-  const allocCols = (counts, budget) => {
-    const total = counts.reduce((a, b) => a + b, 0);
-    const cap   = Math.min(budget, total);
-    const alloc = counts.map(n => Math.max(1, Math.min(n, Math.round(cap * n / total))));
-    let sum = alloc.reduce((a, b) => a + b, 0);
-    // Trim overshoot from the group with the most columns (keeping ≥1).
-    while (sum > cap) {
-      let idx = -1, best = 1;
-      alloc.forEach((c, i) => { if (c > best) { best = c; idx = i; } });
-      if (idx < 0) break;
-      alloc[idx]--; sum--;
+  const blockW = COLS * SNW + (COLS - 1) * CARD_GAP;   // fixed 5-wide
+  const VW     = blockW + 2 * MARG;
+  const blockX = MARG;                                  // block left edge (centred → MARG)
+  const MNW    = blockW;
+  const MNX    = MARG;
+  const MNCX   = MNX + MNW / 2;
+
+  // Card X for a 0-based column position; the row list and pixel height of a block.
+  const cardX  = pos => blockX + pos * (SNW + CARD_GAP);
+  const rowsOf = items => { const r = []; for (let i = 0; i < items.length; i += COLS) r.push(items.slice(i, i + COLS)); return r; };
+  const blockH = items => { const rows = Math.ceil(items.length / COLS); return rows ? LBL_H + rows * SNH + (rows - 1) * ROW_GAP : 0; };
+
+  // Split the internal connections of one direction into the main node's own
+  // crate (the `fan` block) and one block per OTHER crate, sorted by crate name.
+  // Dashed-box stroke per block type (cards inside keep their own tint).
+  const BOX_EXT = '#9aa0a6', BOX_FAN = '#8ba6c0', BOX_IN = '#88bb88', BOX_OUT = '#ccaa77';
+
+  const sameCrate  = recs => recs.filter(r => !isCrossCrate(r.node));
+  // Cross-crate connections grouped per crate, sorted by card count DESCENDING
+  // (biggest crate first) — used to place bigger crates nearer the node.
+  const crossByCrate = recs => {
+    const m = new Map();
+    for (const r of recs) {
+      if (!isCrossCrate(r.node)) continue;
+      const c = String(nodeAttr(r.node, _groupKey));
+      (m.get(c) || m.set(c, []).get(c)).push(r);
     }
-    // Spend any slack on the group with the most cards that still has room.
-    while (sum < cap) {
-      let idx = -1, best = -1;
-      alloc.forEach((c, i) => { if (c < counts[i] && counts[i] > best) { best = counts[i]; idx = i; } });
-      if (idx < 0) break;
-      alloc[idx]++; sum++;
-    }
-    return alloc;
+    return [...m.entries()].sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
   };
 
-  // Build column descriptors for one direction: one internal-connections column
-  // plus (when present) a separate grey `external` column on the same tier. The
-  // two groups SHARE a ≤ MAX_TIER_COLS column budget (split by card count); rows
-  // beyond what fits are not truncated — the diagram scrolls.
-  const buildCols = ({ internal, external }) => {
-    const raw = [];
-    if (internal.length) raw.push({ kind: 'connections', all: internal, items: internal, count: internal.length, ext: false });
-    if (external.length) raw.push({ kind: 'external',    all: external, items: external, count: external.length, ext: true  });
-    if (raw.length === 0) return raw;
+  // Ordered block descriptors. `fan` marks the single block that arrows to the
+  // node. Bigger crates sit CLOSER to the node: above → ascending toward fan-in
+  // (biggest just above it); below → descending from fan-out.
+  // A block's label is a plain prefix + a bolder crate-name suffix (nullable).
+  const mk = (items, dir, label, crate, color, fan) => ({ items, dir, label, crate, color, fan: !!fan, h: blockH(items), y: 0 });
+  const crateIn  = crossByCrate(inConns.internal);    // desc by count
+  const crateOut = crossByCrate(outConns.internal);   // desc by count
+  // The main node's own crate — labels the same-crate fan blocks too.
+  const ownCrate = _mainCrate != null && _mainCrate !== '' ? String(_mainCrate) : null;
 
-    const widths = allocCols(raw.map(c => c.count), MAX_TIER_COLS);
-    raw.forEach((c, i) => {
-      c.cardW = widths[i];
-      c.px_w  = c.cardW * CELL - 12 + 2 * COL_PAD_X;
-      const rows = [];
-      for (let j = 0; j < c.items.length; j += c.cardW)
-        rows.push(c.items.slice(j, j + c.cardW));
-      c.rows = rows;
-      c.h    = PAD_TOP + rows.length * ROW_H - (ROW_H - SNH) + PAD_BOT;
-    });
-    return raw;
-  };
+  const above = [];
+  if (inConns.external.length) above.push(mk(inConns.external, 'in', 'external', null, BOX_EXT));
+  for (const [c, items] of [...crateIn].reverse()) above.push(mk(items, 'in', 'crate in: ', c, BOX_IN));
+  const fanInRecs = sameCrate(inConns.internal);
+  if (fanInRecs.length) above.push(mk(fanInRecs, 'in', ownCrate ? 'crate in: ' : 'fan in', ownCrate, BOX_FAN, true));
 
-  const inCols  = buildCols(inConns);
-  const outCols = buildCols(outConns);
+  const below = [];
+  const fanOutRecs = sameCrate(outConns.internal);
+  if (fanOutRecs.length) below.push(mk(fanOutRecs, 'out', ownCrate ? 'crate out: ' : 'fan out', ownCrate, BOX_FAN, true));
+  for (const [c, items] of crateOut) below.push(mk(items, 'out', 'crate out: ', c, BOX_OUT));
+  if (outConns.external.length) below.push(mk(outConns.external, 'out', 'external', null, BOX_EXT));
 
-  // Total pixel width of a column set
-  const colsW = cols => cols.length === 0 ? 0
-    : cols.reduce((s, c) => s + c.px_w, 0) + (cols.length - 1) * COL_GAP;
+  const fanInBlock  = above.find(b => b.fan) || null;
+  const fanOutBlock = below.find(b => b.fan) || null;
 
-  // SVG width driven by columns; main node width computed after column positions are known
-  const VW = Math.max(800, 2 * SIDE_PAD + colsW(inCols), 2 * SIDE_PAD + colsW(outCols));
-
-  const maxInH  = inCols.length  > 0 ? Math.max(...inCols.map(c => c.h))  : 0;
-  const maxOutH = outCols.length > 0 ? Math.max(...outCols.map(c => c.h)) : 0;
-
-  const inAreaBottom = inCols.length  > 0 ? MARG + maxInH : 0;
-  const MNY          = inCols.length  > 0 ? inAreaBottom + ARR_GAP : MARG;
-  const outAreaTop   = outCols.length > 0 ? MNY + MNH2 + ARR_GAP : 0;
-  const VH           = outCols.length > 0 ? outAreaTop + maxOutH + MARG : MNY + MNH2 + MARG;
-
-  // Assign X positions to columns (group is centred in VW)
-  const assignX = cols => {
-    let x = (VW - colsW(cols)) / 2;
-    for (const c of cols) { c.x = x; x += c.px_w + COL_GAP; }
-  };
-
-  if (inCols.length  > 0) assignX(inCols);
-  if (outCols.length > 0) assignX(outCols);
-
-  // Main node width: at least MNW_MIN, but wide enough to cover all arrow X positions
-  const allCols   = [...inCols, ...outCols];
-  const arrowXs   = allCols.map(c => c.x + c.px_w / 2);
-  const tiersW = Math.max(colsW(inCols), colsW(outCols));
-  const MNW = allCols.length > 0
-    ? Math.max(MNW_MIN, tiersW, 2 * Math.max(...arrowXs.map(x => Math.abs(x - VW / 2))) + 2 * COL_PAD_X)
-    : MNW_MIN;
-  const MNX  = (VW - MNW) / 2;
-  const MNCX = MNX + MNW / 2;
-
-  // Assign Y: in-cols bottom-anchored, out-cols top-anchored
-  for (const c of inCols)  c.y = inAreaBottom - c.h;
-  for (const c of outCols) c.y = outAreaTop;
-
-  // X of a card at position pos in a row of rowLen cards inside column col
-  const nodeXInCol = (col, pos, rowLen) => {
-    const span = rowLen * SNW + (rowLen - 1) * 12;
-    return col.x + (col.px_w - span) / 2 + pos * CELL;
-  };
+  // Stack from the top down, then the node, then the blocks below it.
+  let cursor = MARG;
+  above.forEach((b, i) => {
+    b.y = cursor;
+    cursor += b.h;
+    cursor += (i === above.length - 1 && b.fan) ? ARR_GAP : BLOCK_GAP;
+  });
+  const MNY = cursor;
+  cursor = MNY + MNH2;
+  below.forEach((b, i) => {
+    cursor += (i === 0 && b.fan) ? ARR_GAP : BLOCK_GAP;
+    b.y = cursor;
+    cursor += b.h;
+  });
+  const VH = cursor + MARG;
 
   // Cycle highlight state
   const cycleNodes = window.CYCLES?.[level]?.nodeCycleStatus;
@@ -348,39 +328,27 @@ function buildDiagramSVG(node, level) {
       `</g>` + prBadge + `</g>`;
   };
 
-  // Render one column (dashed box + optional header + node cards).
-  const renderCol = (col, dir) => {
-    const color = kindColor(col.kind);
-    const dash  = kindDash(col.kind);
-    let r = '';
-    r += `<rect x="${col.x}" y="${col.y}" width="${col.px_w}" height="${col.h}" rx="8" fill="none" stroke="${color}" stroke-width="1.5" stroke-dasharray="${dash}"/>`;
-    if (col.ext) {
-      const label = `external  ${col.all.length}`;
-      r += `<text x="${col.x+10}" y="${col.y+13}" font-family="system-ui,sans-serif" font-size="10" fill="${color}" font-weight="600">${label}</text>`;
-    }
-    col.rows.forEach((row, ri) =>
-      row.forEach((item, pi) =>
-        r += sideNode(item, nodeXInCol(col, pi, row.length), col.y + PAD_TOP + ri * ROW_H, dir)
-      )
+  // Render a block: a full-width dashed outline + a coloured label strip + the
+  // cards in a 5-wide grid.
+  const renderBlock = b => {
+    if (!b.items.length) return '';
+    let r = `<rect x="${blockX - HPAD}" y="${b.y}" width="${blockW + 2*HPAD}" height="${b.h + BOX_VPAD}" rx="8" fill="none" stroke="${b.color}" stroke-width="1"/>`;
+    r += `<text x="${blockX}" y="${b.y + 11}" font-family="system-ui,sans-serif" font-size="11" fill="${b.color}" font-weight="600">${esc(b.label)}${b.crate != null ? `<tspan font-weight="800">${esc(b.crate)}</tspan>` : ''}</text>`;
+    rowsOf(b.items).forEach((row, ri) =>
+      row.forEach((item, pi) => {
+        r += sideNode(item, cardX(pi), b.y + LBL_H + ri * ROW_H, b.dir);
+      })
     );
     return r;
   };
 
-  // Fan-in columns (above main node, bottom-anchored) — one arrow per column
-  if (inCols.length > 0) {
-    inCols.forEach(c => {
-      s += renderCol(c, 'in');
-      const cx  = Math.round(c.x + c.px_w / 2);
-      const my  = Math.round((c.y + c.h + MNY) / 2);
-      const stroke = c.ext ? '#9aa0a6' : '#4d6f9c';
-      const marker = c.ext ? 'ah-ext' : 'ah';
-      s += `<line x1="${cx}" y1="${c.y + c.h}" x2="${cx}" y2="${MNY}" stroke="${stroke}" stroke-width="1.5" marker-end="url(#${marker})"/>`;
-      // Fan-in is the flow-edge metric; the column may also show non-flow
-      // neighbours (reexports / contains), so label with the metric, not the
-      // card count, and only when there is flow coupling to report.
-      if (!c.ext && node.fan_in != null && node.fan_in > 0)
-        s += `<text x="${cx+5}" y="${my+4}" font-family="system-ui,sans-serif" font-size="10" fill="#5c7a96">Fan-in: ${node.fan_in}</text>`;
-    });
+  // Blocks above the node (external, per-crate, then same-crate fan-in).
+  for (const b of above) s += renderBlock(b);
+  // Fan-in arrow — only same-crate fan-in → node.
+  if (fanInBlock) {
+    s += `<line x1="${MNCX}" y1="${fanInBlock.y + fanInBlock.h + BOX_VPAD}" x2="${MNCX}" y2="${MNY}" stroke="#4d6f9c" stroke-width="1.5" marker-end="url(#ah)"/>`;
+    if (node.fan_in != null && node.fan_in > 0)
+      s += `<text x="${MNCX+8}" y="${Math.round((fanInBlock.y + fanInBlock.h + MNY) / 2) + 4}" font-family="system-ui,sans-serif" font-size="10" fill="#5c7a96">Fan-in: ${node.fan_in}</text>`;
   }
 
   // Main node
@@ -490,22 +458,14 @@ function buildDiagramSVG(node, level) {
   s += `<text class="mn-copied-msg" ${mono} x="${MNX+MNW/2}" y="${MNY+MNH2/2+18}" text-anchor="middle" font-size="20" font-weight="700" fill="#4d6f9c">copied</text>`;
   s += `</g>`;
 
-  // Fan-out columns (below main node, top-anchored) — one arrow per column
-  if (outCols.length > 0) {
-    outCols.forEach(c => {
-      const cx  = Math.round(c.x + c.px_w / 2);
-      const my  = Math.round((MNY + MNH2 + c.y) / 2);
-      const stroke = c.ext ? '#9aa0a6' : '#4d6f9c';
-      const marker = c.ext ? 'ah-ext' : 'ah';
-      s += `<line x1="${cx}" y1="${MNY+MNH2}" x2="${cx}" y2="${c.y}" stroke="${stroke}" stroke-width="1.5" marker-end="url(#${marker})"/>`;
-      // Fan-out is the flow-edge metric; the column may also show non-flow
-      // neighbours (reexports / contains), so label with the metric, not the
-      // card count, and only when there is flow coupling to report.
-      if (!c.ext && node.fan_out != null && node.fan_out > 0)
-        s += `<text x="${cx+5}" y="${my+4}" font-family="system-ui,sans-serif" font-size="10" fill="#5c7a96">Fan-out: ${node.fan_out}</text>`;
-      s += renderCol(c, 'out');
-    });
+  // Fan-out arrow — only node → same-crate fan-out.
+  if (fanOutBlock) {
+    s += `<line x1="${MNCX}" y1="${MNY+MNH2}" x2="${MNCX}" y2="${fanOutBlock.y}" stroke="#4d6f9c" stroke-width="1.5" marker-end="url(#ah)"/>`;
+    if (node.fan_out != null && node.fan_out > 0)
+      s += `<text x="${MNCX+8}" y="${Math.round((MNY + MNH2 + fanOutBlock.y) / 2) + 4}" font-family="system-ui,sans-serif" font-size="10" fill="#5c7a96">Fan-out: ${node.fan_out}</text>`;
   }
+  // Blocks below the node (same-crate fan-out, per-crate, then external).
+  for (const b of below) s += renderBlock(b);
 
   s += '</svg>';
   return s;

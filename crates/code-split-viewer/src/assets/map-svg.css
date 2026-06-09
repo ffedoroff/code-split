@@ -123,7 +123,7 @@ g.node.node-selected > ellipse { fill: #fffde7; stroke: #f9a825; stroke-width: 2
 /* ── Hover: last → wins over selection when both classes present ─────────────── */
 .node-table tr.row-hl td { background: rgb(210,235,248); }
 .node-table tr.row-hl td[data-col="name"] { background: rgb(210,235,248); }
-g.node.node-hl { filter: drop-shadow(0 0 28px rgba(30,160,220,1)) drop-shadow(0 0 14px rgba(30,160,220,.85)) drop-shadow(0 0 6px rgba(30,160,220,.6)); }
+g.node.node-hl { filter: drop-shadow(0 0 7px rgba(30,160,220,1)) drop-shadow(0 0 3px rgba(30,160,220,.95)); }
 
 /* ── SVG status bar (bottom of frame-wrap, replaces tooltip on map nodes) ─── */
 .svg-status-bar {

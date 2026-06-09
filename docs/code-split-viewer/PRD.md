@@ -214,15 +214,20 @@ file on the project's git host, built from `git.origin`; project files
 only) → kind → visibility → items/methods → cycle info → status → metric
 sections in a single column. Hover highlight (blue drop-shadow) takes CSS
 priority over selection highlight. **Space** toggles the selection checkbox
-while the popup is open. The popup's neighbourhood diagram mirrors the map's
-gestures — Shift-click toggles a node's selection, ⌘/Ctrl-click opens its
-source — and shows the same yellow highlight for nodes already selected; its
-3rd-party (external) cards and arrows are drawn grey and are inert (not
-selectable, no source, no ⌘-navigation). A neighbour from a **different crate**
-is tinted like the map's clusters — green for callers (fan-in), yellow for
-dependencies (fan-out) — while same-crate neighbours stay neutral. Hovering a
-neighbour card shows its file name, `crate:` and `path:` (repo-relative,
-`/foo/bar`).
+while the popup is open. The popup's neighbourhood diagram stacks the
+connections in **labelled blocks, 5 cards per row**: from the top — external
+callers, one block per **other crate** that calls in (`crate in: <crate>`),
+same-crate callers (`fan in`), the **central node**, same-crate dependencies
+(`fan out`), one block per other crate it depends on (`crate out: <crate>`), and
+external dependencies; per-crate blocks are ordered with the biggest nearest the
+node. **Arrows are drawn only between fan-in → node → fan-out.** Cards are tinted
+like the map's clusters — green for callers, yellow for dependencies — while
+same-crate cards stay neutral and 3rd-party (external) cards are grey. It mirrors
+the map's gestures — Shift-click toggles a node's selection, ⌘/Ctrl-click opens
+its source — and shows the same yellow highlight for nodes already selected; the
+external cards and arrows are inert (not selectable, no source, no
+⌘-navigation). Hovering a neighbour card shows its file name, `crate:` and
+`path:` (repo-relative, `/foo/bar`).
 
 **Rationale**: The diff is the quantitative answer to "did my
 refactoring reduce coupling?" Without it, the user must compare two

@@ -7,6 +7,23 @@ function setupPanZoom(frame, svg) {
   frame.dataset.naturalVB = `${ox} ${oy} ${ow} ${oh}`;
   let pan = null, didDrag = false, animFrame = null;
 
+  // Capped fit-all viewBox: the default framing never zooms IN past 1.3× absolute
+  // (frame px per SVG unit). For small graphs whose natural fit would magnify
+  // beyond that, enlarge the viewBox (centred) so the on-screen scale lands at 1.3.
+  const MAX_FIT_ZOOM = 1.3;
+  function fitVB() {
+    const fw = frame.clientWidth || frame.offsetWidth || 0;
+    const fh = frame.clientHeight || frame.offsetHeight || 0;
+    if (!fw || !fh || !ow || !oh) return [ox, oy, ow, oh];
+    const fitScale = Math.min(fw / ow, fh / oh);
+    if (fitScale <= MAX_FIT_ZOOM) return [ox, oy, ow, oh];
+    const k = fitScale / MAX_FIT_ZOOM, nw = ow * k, nh = oh * k;
+    return [ox + (ow - nw) / 2, oy + (oh - nh) / 2, nw, nh];
+  }
+  // Default framing for this fresh render = the capped fit. renderView's preserve
+  // step overrides this afterwards when the user had zoomed/panned.
+  { const [fx, fy, fw, fh] = fitVB(); svg.setAttribute('viewBox', `${fx} ${fy} ${fw} ${fh}`); }
+
   function getVB() { return svg.getAttribute('viewBox').split(/[ ,]+/).map(Number); }
   function setVB(x, y, w, h) { svg.setAttribute('viewBox', `${x} ${y} ${w} ${h}`); }
 
@@ -22,7 +39,7 @@ function setupPanZoom(frame, svg) {
     })(t0);
   }
 
-  function zoomOut()     { animate(ox, oy, ow, oh, 250); frame.classList.remove('zoomed', 'panning'); }
+  function zoomOut()     { const [fx, fy, fw, fh] = fitVB(); animate(fx, fy, fw, fh, 250); frame.classList.remove('zoomed', 'panning'); }
   function zoomInCenter() {
     const [vx, vy, vw, vh] = getVB();
     const nw = vw * 0.667, nh = vh * 0.667;

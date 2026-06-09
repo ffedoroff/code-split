@@ -146,12 +146,13 @@ function updateDigLabel(level) {
   const outN = window.groupCountAtDig?.(level, z - 1);
   const inN  = window.groupCountAtDig?.(level, z + 1);
   const maxD = window.maxCrateDepth?.(level) ?? 0;
-  // "Out" runs all the way to a single _root group. "In" also stops once digging
-  // deeper no longer splits anything (next-level count == current) — every file
-  // already sits at its deepest folder.
+  // "Out" runs all the way to a single _root group. "In" stops at DIG_MAX, and
+  // — only once dig has reached the crate tier (z >= 0) — also stops when digging
+  // deeper no longer splits anything (next-level count == current). While dug out
+  // (z < 0) "+" stays enabled so you can always dig back in.
   root.querySelector('[data-lod="out"]')?.toggleAttribute('disabled', z <= -maxD || z <= DIG_MIN);
   root.querySelector('[data-lod="in"]') ?.toggleAttribute('disabled',
-    z >= DIG_MAX || (inN != null && curN != null && inN === curN));
+    z >= DIG_MAX || (z >= 0 && inN != null && curN != null && inN === curN));
   const curC = root.querySelector('[data-count="cur"]');
   const outC = root.querySelector('[data-count="out"]');
   const inC  = root.querySelector('[data-count="in"]');
@@ -214,7 +215,8 @@ function computeGroupStats(level, grouper) {
 
 // Format a single status-bar line for a group node.
 function statusLineForGroup(stats) {
-  const parts = [stats.name];
+  // `_root` is the collapse sentinel (no path segments) — show it as "/".
+  const parts = [stats.name === '_root' ? '/' : stats.name];
   // Full directory path of the group, unless it just repeats the name.
   const norm = s => String(s).replace(/^[←→]\s*/, '').replace(/^\//, '');
   if (stats.path && stats.path !== '/' && norm(stats.path) !== norm(stats.name)) parts.push(stats.path);
@@ -224,6 +226,41 @@ function statusLineForGroup(stats) {
   if (stats.hk   > 0) parts.push(`hk: ${fmtMetricShort(stats.hk)}`);
   if (stats.cycle > 0) parts.push(`in cycle: ${stats.cycle}`);
   return parts.join('  ·  ');
+}
+
+// Hover smoothing + paint order ───────────────────────────────────────────────
+// SVG has no z-index, so a hovered node's glow would be painted under its later
+// siblings. Move it to the end of its parent ONCE on first hover (never restored
+// — paint order doesn't affect layout, so leaving it on top is harmless).
+function raisePaint(el) {
+  if (el && !el._raised) { el.parentNode?.appendChild(el); el._raised = true; }
+}
+
+const HOVER_DELAY = 70;   // ms before a hover effect applies — avoids flicker on quick passes
+
+// Wire a node's hover with the glow class + paint raise, debounced so dragging
+// the cursor across many nodes doesn't flash. `onEnter` runs once when settled;
+// `onLeave` always runs (its clears are safe even if `onEnter` never fired).
+function wireNodeHover(el, onEnter, onLeave) {
+  let timer = null, active = false;
+  el.addEventListener('mouseenter', () => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => {
+      timer = null; active = true;
+      // Always drop any prior highlight first — a missed mouseleave (fast move,
+      // or a paint-raise reparent) must never leave two nodes glowing at once.
+      (el.ownerSVGElement || el.closest('svg'))
+        ?.querySelectorAll('.node-hl').forEach(n => { if (n !== el) n.classList.remove('node-hl'); });
+      raisePaint(el);
+      el.classList.add('node-hl');
+      onEnter?.();
+    }, HOVER_DELAY);
+  });
+  el.addEventListener('mouseleave', e => {
+    if (timer) { clearTimeout(timer); timer = null; }
+    if (active) { active = false; el.classList.remove('node-hl'); }
+    onLeave?.(e);
+  });
 }
 
 // Build edge-highlight behaviour: on node/cluster hover dim unrelated edges and
@@ -273,6 +310,20 @@ function setupEdgeHighlight(svgFrame, level) {
   const clearHighlight = () => {
     svgFrame.classList.remove('node-hovered');
     for (const e of allEdgeEls) e.classList.remove('edge-connected', 'edge-dim');
+  };
+  // Reveal the (default-hidden) green/orange caller/dependency connector edges.
+  const setShowInOut = (showIn, showOut) => {
+    svgFrame.classList.toggle('show-in-edges', !!showIn);
+    svgFrame.classList.toggle('show-out-edges', !!showOut);
+  };
+
+  // ONE shared debounce timer for EVERY edge-highlight change — nodes AND clusters.
+  // A hover that supersedes a pending one cancels it, so crossing node/cluster
+  // boundaries never flashes the arrows back to "all visible".
+  let ehTimer = null;
+  const ehSchedule = fn => {
+    if (ehTimer) clearTimeout(ehTimer);
+    ehTimer = setTimeout(() => { ehTimer = null; fn(); }, HOVER_DELAY);
   };
 
   // ── Cluster highlight: hover on cluster background highlights all its edges ──
@@ -326,50 +377,41 @@ function setupEdgeHighlight(svgFrame, level) {
       nc ? `${nc} node${nc !== 1 ? 's' : ''}` : '',
       ec ? `${ec} edge${ec !== 1 ? 's' : ''}` : '',
     ].filter(Boolean).join('  ·  ');
-    clusterData.set(clusterEl, { edges, statusText });
+    const isIn = cTitle === 'cluster_in', isOut = cTitle === 'cluster_out';
+    clusterData.set(clusterEl, { edges, statusText, isIn, isOut });
 
-    clusterEl.addEventListener('mouseenter', () => { applyHighlight(edges); showSB(statusText); });
-    clusterEl.addEventListener('mouseleave', () => { clearHighlight(); hideSB(); });
+    clusterEl.addEventListener('mouseenter', () =>
+      ehSchedule(() => { applyHighlight(edges); showSB(statusText); setShowInOut(isIn, isOut); }));
+    clusterEl.addEventListener('mouseleave', () =>
+      ehSchedule(() => { clearHighlight(); hideSB(); setShowInOut(false, false); }));
   }
 
   // ── IN/OUT edges are always hidden by default; revealed on cluster/node hover ──
-  // (Previously only hidden past a count threshold; now hidden regardless so the
-  // green/orange connectors never clutter the map until you hover.)
-  const hideInOut = true;
-  const hideIn = hideInOut, hideOut = hideInOut;
-  if (hideInOut) {
-    inEdges.forEach(e  => e.classList.add('cluster-edge-hidden'));
-    outEdges.forEach(e => e.classList.add('cluster-edge-hidden'));
-  }
-
-  // Use the cluster elements found by title above (ids are generated: clust1, …)
-  if (hideIn && clusterInEl) {
-    clusterInEl.addEventListener('mouseenter', () => svgFrame.classList.add('show-in-edges'));
-    clusterInEl.addEventListener('mouseleave', () => svgFrame.classList.remove('show-in-edges'));
-  }
-  if (hideOut && clusterOutEl) {
-    clusterOutEl.addEventListener('mouseenter', () => svgFrame.classList.add('show-out-edges'));
-    clusterOutEl.addEventListener('mouseleave', () => svgFrame.classList.remove('show-out-edges'));
-  }
+  // (The reveal itself is folded into the cluster's debounced hover handler above
+  // via setShowInOut, so it stays in sync with the highlight.)
+  inEdges.forEach(e  => e.classList.add('cluster-edge-hidden'));
+  outEdges.forEach(e => e.classList.add('cluster-edge-hidden'));
 
   // ── Node hover ───────────────────────────────────────────────────────────────
+  // Routed through the same shared `ehSchedule` debounce as clusters: leaving a
+  // node schedules a clear, but entering the next node (or a cluster) cancels it
+  // and schedules its own highlight — so the arrows never flash between targets.
   for (const nodeEl of allNodeEls) {
     const nodeId = nodeEl.querySelector('title')?.textContent?.trim();
     if (!nodeId) continue;
 
     nodeEl.addEventListener('mouseenter', () => {
-      applyHighlight(edgeMap.get(nodeId) ?? new Set());
       // Status bar is updated by setupTooltips handlers (fire after these).
+      ehSchedule(() => { applyHighlight(edgeMap.get(nodeId) ?? new Set()); setShowInOut(false, false); });
     });
 
     nodeEl.addEventListener('mouseleave', e => {
-      // When moving back to a cluster background re-apply cluster highlight;
-      // otherwise clear. setupTooltips mouseleave is registered after ours and
-      // will skip hideStatus when relatedTarget is inside a cluster.
+      // Moving back onto a cluster background re-applies that cluster's full state
+      // (highlight + in/out reveal); otherwise clear. All via the shared debounce.
       const destCluster = e.relatedTarget?.closest?.('g.cluster');
       const cd = destCluster ? clusterData.get(destCluster) : null;
-      if (cd) { applyHighlight(cd.edges); showSB(cd.statusText); }
-      else    clearHighlight();
+      if (cd) ehSchedule(() => { applyHighlight(cd.edges); showSB(cd.statusText); setShowInOut(cd.isIn, cd.isOut); });
+      else    ehSchedule(() => { clearHighlight(); setShowInOut(false, false); });
     });
   }
 }
@@ -408,16 +450,13 @@ function setupTooltips(svgFrame, level) {
           e.stopPropagation();
           drillIntoGroup(neighborGroup, level);
         });
-        g.addEventListener('mouseenter', () => {
-          g.classList.add('node-hl');
-          const st = neighbourStats.get(neighborGroup);
-          showStatus(st ? statusLineForGroup({ ...st, name: arrow + st.name })
-                        : arrow + neighborGroup);
-        });
-        g.addEventListener('mouseleave', e => {
-          g.classList.remove('node-hl');
-          if (!e.relatedTarget?.closest?.('g.cluster')) hideStatus();
-        });
+        wireNodeHover(g,
+          () => {
+            const st = neighbourStats.get(neighborGroup);
+            showStatus(st ? statusLineForGroup({ ...st, name: arrow + st.name })
+                          : arrow + neighborGroup);
+          },
+          e => { if (!e.relatedTarget?.closest?.('g.cluster')) hideStatus(); });
         return;
       }
 
@@ -438,18 +477,17 @@ function setupTooltips(svgFrame, level) {
         if (window.openModalForNode?.(node.id, level)) window.navPush?.(level, node.id);
       });
 
-      g.addEventListener('mouseenter', () => {
-        g.classList.add('node-hl');
-        section?.querySelector(`tr[data-node-id="${nodeId.replace(/\\/g,'\\\\').replace(/"/g,'\\"')}"]`)
-                ?.classList.add('row-hl');
-        showStatus(statusLineFor(node, level));
-      });
-      g.addEventListener('mouseleave', e => {
-        g.classList.remove('node-hl');
-        section?.querySelector(`tr[data-node-id="${nodeId.replace(/\\/g,'\\\\').replace(/"/g,'\\"')}"]`)
-                ?.classList.remove('row-hl');
-        if (!e.relatedTarget?.closest?.('g.cluster')) hideStatus();
-      });
+      wireNodeHover(g,
+        () => {
+          section?.querySelector(`tr[data-node-id="${nodeId.replace(/\\/g,'\\\\').replace(/"/g,'\\"')}"]`)
+                  ?.classList.add('row-hl');
+          showStatus(statusLineFor(node, level));
+        },
+        e => {
+          section?.querySelector(`tr[data-node-id="${nodeId.replace(/\\/g,'\\\\').replace(/"/g,'\\"')}"]`)
+                  ?.classList.remove('row-hl');
+          if (!e.relatedTarget?.closest?.('g.cluster')) hideStatus();
+        });
     });
 
   } else {
@@ -472,14 +510,9 @@ function setupTooltips(svgFrame, level) {
         e.stopPropagation();
         drillIntoGroup(groupId, level);
       });
-      g.addEventListener('mouseenter', () => {
-        g.classList.add('node-hl');
-        showStatus(statusLineForGroup(stats));
-      });
-      g.addEventListener('mouseleave', e => {
-        g.classList.remove('node-hl');
-        if (!e.relatedTarget?.closest?.('g.cluster')) hideStatus();
-      });
+      wireNodeHover(g,
+        () => showStatus(statusLineForGroup(stats)),
+        e => { if (!e.relatedTarget?.closest?.('g.cluster')) hideStatus(); });
     });
   }
 
