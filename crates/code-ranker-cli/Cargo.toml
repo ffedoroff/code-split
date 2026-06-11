@@ -8,6 +8,7 @@ repository.workspace = true
 keywords.workspace = true
 categories.workspace = true
 description = "Code Ranker CLI — pluggable multi-language structural analysis platform."
+readme = "../../README.md"
 
 [[bin]]
 name = "code-ranker"
